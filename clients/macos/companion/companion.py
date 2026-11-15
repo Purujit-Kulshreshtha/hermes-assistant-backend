@@ -10,12 +10,14 @@ import random
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 from kokoro_tts import KokoroSpeaker, TTSUnavailable
+from audio_capture import AudioUnavailable, UtteranceRecorder
 
 
 HEX = Path("/Applications/Hex.app/Contents/MacOS/hex")
@@ -77,24 +79,20 @@ def extract_after_wake_word(transcript: str, wake_word: str) -> tuple[bool, str]
     return True, remainder
 
 
-def run_hex_listener(hex_bin: Path):
-    process = subprocess.Popen(
-        [str(hex_bin), "listen"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-    assert process.stdout is not None
-    return process
-
-
-def stop_listener(process: subprocess.Popen) -> None:
-    process.terminate()
+def transcribe(hex_bin: Path, recorder: UtteranceRecorder, audio) -> str:
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+        path = Path(handle.name)
     try:
-        process.wait(timeout=3)
-    except subprocess.TimeoutExpired:
-        process.kill()
+        recorder.write_wav(path, audio)
+        result = subprocess.run(
+            [str(hex_bin), "transcribe", str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -109,6 +107,13 @@ def main() -> int:
         return 1
 
     api = API(args.base_url, keychain_key())
+    subprocess.run([str(args.hex_bin), "start"], check=True)
+    try:
+        recorder = UtteranceRecorder()
+    except AudioUnavailable as exc:
+        print(f"Audio capture is unavailable: {exc}", file=sys.stderr)
+        print("Run ./install-kokoro.sh again after installing PortAudio.", file=sys.stderr)
+        return 1
     speaker = None
     if not args.print_only:
         try:
@@ -127,41 +132,23 @@ def main() -> int:
             if speaker:
                 speaker.configure(settings["tts_voice"], settings["tts_speed"])
                 speaker.prepare(settings["acknowledgement_phrases"])
-            print(f"Listening for “{wake_word}”…")
-            listener = run_hex_listener(args.hex_bin)
+            print(f"Listening for “{wake_word}”…", flush=True)
+            audio = recorder.capture_utterance()
+            transcript = transcribe(args.hex_bin, recorder, audio)
+            if not transcript:
+                continue
+            print(f"Heard: {transcript}")
             command = ""
-            listener_error = ""
-            try:
-                assert listener.stdout is not None
-                for line in listener.stdout:
-                    transcript = line.strip()
-                    if not transcript:
-                        continue
-                    print(f"Heard: {transcript}")
-                    if armed:
-                        command = transcript
-                        armed = False
-                        break
-                    detected, remainder = extract_after_wake_word(transcript, wake_word)
-                    if detected and remainder:
-                        command = remainder
-                        break
-                    if detected:
-                        armed = True
-                        print("Wake word detected; waiting for the instruction…")
-                if not command:
-                    listener.wait()
-                    if listener.stderr is not None:
-                        listener_error = listener.stderr.read().strip()
-            finally:
-                if listener.poll() is None:
-                    stop_listener(listener)
-
+            if armed:
+                command, armed = transcript, False
+            else:
+                detected, remainder = extract_after_wake_word(transcript, wake_word)
+                if detected and remainder:
+                    command = remainder
+                elif detected:
+                    armed = True
+                    print("Wake word detected; waiting for the instruction…")
             if not command:
-                detail = listener_error or f"Hex listen exited with code {listener.returncode}"
-                print(f"Hex listener stopped: {detail}", file=sys.stderr)
-                print("Retrying in 3 seconds…", file=sys.stderr)
-                time.sleep(3)
                 continue
             print(f"You: {command}")
             job_id = api.submit(command, args.conversation)

@@ -9,17 +9,24 @@ effect without retraining a model or restarting the companion.
 
 ## Install TTS
 
-Requires Apple Silicon, Hex and Homebrew `uv`:
+Requires Apple Silicon, Hex, PortAudio and Homebrew `uv`:
 
 ```bash
-brew install uv
+brew install uv portaudio
 ./install-kokoro.sh
 ```
 
 The first run downloads Kokoro 82M. Later synthesis is local.
 
-The companion invokes `hex listen` directly. Do not start a second push-to-talk
-client at the same time; only one process should own Hex listening.
+The companion records speech locally with voice-activity detection, then sends
+each completed utterance to `hex transcribe`. This is necessary because
+`hex listen` does not emit its live transcript to other processes.
+
+If quiet speech is not detected, lower the threshold before starting:
+
+```bash
+export NANCY_SPEECH_THRESHOLD=0.008
+```
 
 ## Run
 
