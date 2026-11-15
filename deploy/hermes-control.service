@@ -9,6 +9,9 @@ User=ubuntu
 WorkingDirectory=/opt/hermes-control
 EnvironmentFile=/opt/hermes-control/.env
 Environment=HISTORY_DB_PATH=/var/lib/hermes-control/history.db
+Environment=VOICE_TEMP_DIR=/var/lib/hermes-control/voice
+Environment=HOME=/var/lib/hermes-control
+Environment=HEX_BIN=/usr/local/bin/hex
 ExecStart=/opt/hermes-control/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8787
 Restart=on-failure
 RestartSec=5

@@ -83,6 +83,12 @@ curl http://127.0.0.1:8787/health
 Keep port `8787` closed in OCI. Caddy publishes the service over HTTPS on port
 443, while ports `8642` (Hermes) and `8080` (OpenTodo) stay private.
 
+The production service uses `/var/lib/hermes-control` as `HOME` so Hex can keep
+its downloaded model and caches inside the service's writable state directory.
+Install the Linux ARM64 Hex executable at `/usr/local/bin/hex`, then run one
+manual transcription as the `ubuntu` user with `HOME=/var/lib/hermes-control`
+before enabling browser voice notes.
+
 ## Clients
 
 The native macOS companion and menu-bar wrapper are deprecated. Voice input is
