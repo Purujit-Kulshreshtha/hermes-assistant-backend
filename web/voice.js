@@ -13,6 +13,11 @@
   let starting = false;
   let stopping = false;
   let releasePending = false;
+  let discardPending = false;
+  let holdTimer;
+  let holdActive = false;
+  let pressStopsRecording = false;
+  const HOLD_DELAY_MS = 350;
 
   function supportedMimeType() {
     return [
@@ -57,6 +62,7 @@
 
   function reset() {
     clearInterval(timerHandle);
+    clearTimeout(holdTimer);
     recorder = undefined;
     sessionId = undefined;
     sequence = 0;
@@ -64,6 +70,9 @@
     starting = false;
     stopping = false;
     releasePending = false;
+    discardPending = false;
+    holdActive = false;
+    pressStopsRecording = false;
     stopTracks();
     button.classList.remove('recording');
     button.disabled = false;
@@ -111,11 +120,11 @@
       recorder.start(1000);
       startedAt = Date.now();
       timerHandle = setInterval(updateTimer, 250);
-      showState('Recording — release to send', true);
+      showState(holdActive ? 'Recording — release to send' : 'Recording — tap again to send', true);
       button.disabled = false;
       $('sendButton').disabled = true;
       starting = false;
-      if (releasePending) await finishRecording(false);
+      if (releasePending) await finishRecording(discardPending);
     } catch (error) {
       if (sessionId) {
         rawRequest(`/voice/sessions/${sessionId}`, {method: 'DELETE'}).catch(() => {});
@@ -128,6 +137,7 @@
   async function finishRecording(discard) {
     if (starting) {
       releasePending = true;
+      discardPending = discard;
       return;
     }
     if (!recorder || stopping) return;
@@ -166,15 +176,29 @@
 
   button.addEventListener('pointerdown', event => {
     event.preventDefault();
-    releasePending = false;
     button.setPointerCapture?.(event.pointerId);
+    pressStopsRecording = Boolean(recorder || starting);
+    if (pressStopsRecording) return;
+    releasePending = false;
+    discardPending = false;
+    holdActive = false;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => {
+      holdActive = true;
+      if (recorder) showState('Recording — release to send', true);
+    }, HOLD_DELAY_MS);
     startRecording();
   });
   button.addEventListener('pointerup', event => {
     event.preventDefault();
-    finishRecording(false);
+    clearTimeout(holdTimer);
+    if (pressStopsRecording || holdActive) finishRecording(false);
+    pressStopsRecording = false;
   });
-  button.addEventListener('pointercancel', () => finishRecording(true));
+  button.addEventListener('pointercancel', () => {
+    clearTimeout(holdTimer);
+    finishRecording(true);
+  });
   $('cancelVoice').addEventListener('click', () => finishRecording(true));
   window.addEventListener('keydown', event => {
     if (event.key === 'Escape' && recorder) finishRecording(true);
