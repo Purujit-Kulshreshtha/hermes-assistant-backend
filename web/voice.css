@@ -1,0 +1,73 @@
+#composer {
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+}
+
+.shell {
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+}
+
+#sendButton,
+#voiceButton {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 14px;
+  font-size: 1.35rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+#voiceButton {
+  background: #2b2824;
+  color: #e9ded1;
+  touch-action: none;
+  user-select: none;
+}
+
+#voiceButton.recording {
+  background: var(--danger);
+  color: #fff;
+  transform: scale(.94);
+}
+
+#voiceButton:disabled {
+  opacity: .4;
+}
+
+.voice-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: -9px 7px 16px;
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.voice-status[hidden] {
+  display: none;
+}
+
+.recording-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+
+.voice-status time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-status button {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+}
+
+@keyframes voice-pulse {
+  50% { opacity: .35; transform: scale(.75); }
+}

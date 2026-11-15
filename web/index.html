@@ -10,6 +10,7 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/layout.css">
+  <link rel="stylesheet" href="/voice.css">
 </head>
 <body>
   <div class="shell">
@@ -39,8 +40,15 @@
     <form id="composer">
       <textarea id="messageInput" rows="1" maxlength="4000"
         placeholder="Message Nancy…" aria-label="Message"></textarea>
+      <button id="voiceButton" type="button" aria-label="Hold to record a voice note" title="Hold to record">●</button>
       <button id="sendButton" type="submit" aria-label="Send">↑</button>
     </form>
+    <div id="voiceStatus" class="voice-status" hidden>
+      <span class="recording-dot"></span>
+      <span id="voiceStatusText">Recording…</span>
+      <time id="voiceTimer">0:00</time>
+      <button id="cancelVoice" type="button">Cancel</button>
+    </div>
   </div>
 
   <dialog id="authDialog">
@@ -110,5 +118,6 @@
   </dialog>
 
   <script src="/app.js" defer></script>
+  <script src="/voice.js" defer></script>
 </body>
 </html>

@@ -334,3 +334,4 @@ async def test_pwa_is_served() -> None:
             response = await client.get("/")
     assert response.status_code == 200
     assert "Nancy" in response.text
+    assert 'id="voiceButton"' in response.text
