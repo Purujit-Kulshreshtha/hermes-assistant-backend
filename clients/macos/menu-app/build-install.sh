@@ -31,12 +31,12 @@ cat > "$plist" <<EOF
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$label</string>
-  <key>ProgramArguments</key><array><string>/usr/bin/open</string><string>$app</string></array>
+  <key>ProgramArguments</key><array><string>$app/Contents/MacOS/Nancy</string></array>
   <key>RunAtLoad</key><true/>
 </dict></plist>
 EOF
 
 launchctl bootout "gui/$UID/$label" 2>/dev/null || true
 launchctl bootstrap "gui/$UID" "$plist"
-open "$app"
+launchctl kickstart "gui/$UID/$label"
 echo "Installed Nancy in $app"
