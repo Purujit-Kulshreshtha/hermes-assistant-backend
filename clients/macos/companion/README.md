@@ -22,6 +22,12 @@ The companion records speech locally with voice-activity detection, then sends
 each completed utterance to `hex transcribe`. This is necessary because
 `hex listen` does not emit its live transcript to other processes.
 
+Enable Hex file transcription once before starting:
+
+```bash
+/Applications/Hex.app/Contents/MacOS/hex labs on transcribe-files
+```
+
 If quiet speech is not detected, lower the threshold before starting:
 
 ```bash

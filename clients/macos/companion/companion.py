@@ -84,12 +84,16 @@ def transcribe(hex_bin: Path, recorder: UtteranceRecorder, audio) -> str:
         path = Path(handle.name)
     try:
         recorder.write_wav(path, audio)
-        result = subprocess.run(
-            [str(hex_bin), "transcribe", str(path)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                [str(hex_bin), "transcribe", str(path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "unknown Hex error").strip()
+            raise RuntimeError(f"Hex transcription failed: {detail}") from exc
         return result.stdout.strip()
     finally:
         path.unlink(missing_ok=True)
@@ -134,7 +138,12 @@ def main() -> int:
                 speaker.prepare(settings["acknowledgement_phrases"])
             print(f"Listening for “{wake_word}”…", flush=True)
             audio = recorder.capture_utterance()
-            transcript = transcribe(args.hex_bin, recorder, audio)
+            try:
+                transcript = transcribe(args.hex_bin, recorder, audio)
+            except RuntimeError as exc:
+                print(exc, file=sys.stderr)
+                print("Listening again…", file=sys.stderr)
+                continue
             if not transcript:
                 continue
             print(f"Heard: {transcript}")
