@@ -85,6 +85,8 @@
 
   async function startRecording() {
     if (starting || recorder || !state.key) return;
+    window.nancyTTS?.stop();
+    window.nancyTTS?.unlock();
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       addMessage('assistant', 'Voice recording is not supported by this browser.');
       return;

@@ -1,11 +1,14 @@
-const CACHE = "nancy-shell-v4";
+const CACHE = "nancy-shell-v5";
 const ASSETS = [
   "/",
   "/styles.css",
   "/layout.css",
   "/voice.css",
+  "/tts.css",
   "/app.js",
   "/voice.js",
+  "/tts.js",
+  "/tts-worker.js",
   "/manifest.webmanifest",
   "/icon.svg",
 ];
@@ -23,8 +26,10 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  const path = new URL(event.request.url).pathname;
+  const url = new URL(event.request.url);
+  const path = url.pathname;
   if (
+    url.origin !== self.location.origin ||
     event.request.method !== "GET" ||
     path.startsWith("/commands") ||
     path.startsWith("/history") ||

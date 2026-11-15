@@ -1,0 +1,19 @@
+.tts-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tts-actions button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #171614;
+  color: var(--text);
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.tts-actions small {
+  color: var(--muted);
+  line-height: 1.35;
+}
