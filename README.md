@@ -78,5 +78,8 @@ The initial push-to-talk client is in `clients/macos`. It uses Hex for local
 speech-to-text and macOS `say` for text-to-speech. See its README for setup.
 
 The installable PWA is served at the root URL. The always-on macOS companion is
-in `clients/macos/companion`; it uses Hex continuous listening and local Kokoro
-TTS, and reads its wake word from the PWA settings.
+in `clients/macos/companion`; it uses local voice-activity capture, Hex file
+transcription and local Kokoro TTS, and reads its settings from the PWA.
+
+Voice sessions begin with the wake word alone, remain active for follow-ups, and
+close on configurable stop phrases. Response playback supports speech barge-in.

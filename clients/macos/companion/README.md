@@ -42,11 +42,23 @@ The API key must already be stored by `../setup-keychain.sh`.
 ./run-companion.sh
 ```
 
-Say the configured wake word followed by the instruction, for example:
+Say the configured wake word by itself:
 
-> Nancy, create a task to buy paint in Home Improvement.
+> Nancy
 
-You can also say “Nancy”, pause, and give the instruction as the next utterance.
+Nancy answers with a listening cue such as “Yes?” or “Go on.” Give the
+instruction as the next utterance. The conversation remains active for follow-up
+instructions without repeating the wake word. Say a configured stop phrase such
+as “That'll be all” to return to wake-word mode.
+
+While Nancy reads a response, speaking above the barge-in threshold stops audio
+playback and treats the utterance as the next instruction. Headphones give the
+most reliable interruption because speaker audio can leak into the microphone.
+Adjust sensitivity when needed:
+
+```bash
+export NANCY_BARGE_IN_THRESHOLD=0.04
+```
 
 For a transcription-only test without installing Kokoro:
 

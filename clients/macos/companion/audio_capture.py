@@ -30,12 +30,13 @@ class UtteranceRecorder:
         self.pre_roll_blocks = 4
         self.device = os.environ.get("NANCY_AUDIO_DEVICE") or None
 
-    def capture_utterance(self):
+    def capture_utterance(self, *, stop_when=None, threshold: float | None = None):
         blocks: queue.Queue = queue.Queue()
         pre_roll = deque(maxlen=self.pre_roll_blocks)
         frames = []
         active = False
         quiet = 0
+        effective_threshold = threshold or self.threshold
 
         def callback(indata, frame_count, time_info, status):
             del frame_count, time_info
@@ -53,16 +54,21 @@ class UtteranceRecorder:
                 callback=callback,
             ):
                 while True:
-                    block = blocks.get()
+                    if stop_when and stop_when():
+                        return None
+                    try:
+                        block = blocks.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
                     rms = float(self.np.sqrt(self.np.mean(self.np.square(block))))
                     if not active:
                         pre_roll.append(block)
-                        if rms >= self.threshold:
+                        if rms >= effective_threshold:
                             active = True
                             frames.extend(pre_roll)
                         continue
                     frames.append(block)
-                    quiet = quiet + 1 if rms < self.threshold else 0
+                    quiet = quiet + 1 if rms < effective_threshold else 0
                     if quiet >= self.silence_blocks or len(frames) >= self.max_blocks:
                         break
         except Exception as exc:

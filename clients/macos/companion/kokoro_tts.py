@@ -56,3 +56,10 @@ class KokoroSpeaker:
 
     def speak(self, text: str) -> None:
         subprocess.run(["afplay", str(self._render(text))], check=True)
+
+    def start(self, text: str) -> subprocess.Popen:
+        return subprocess.Popen(
+            ["afplay", str(self._render(text))],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )

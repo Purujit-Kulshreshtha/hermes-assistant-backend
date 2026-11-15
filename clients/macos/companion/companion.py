@@ -79,6 +79,15 @@ def extract_after_wake_word(transcript: str, wake_word: str) -> tuple[bool, str]
     return True, remainder
 
 
+def normalize_phrase(value: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9']+", " ", value.lower()).split())
+
+
+def matches_stop_phrase(transcript: str, phrases: list[str]) -> bool:
+    normalized = normalize_phrase(transcript)
+    return any(normalize_phrase(phrase) in normalized for phrase in phrases)
+
+
 def transcribe(hex_bin: Path, recorder: UtteranceRecorder, audio) -> str:
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
         path = Path(handle.name)
@@ -128,39 +137,57 @@ def main() -> int:
             return 1
 
     print("Nancy companion is running. Press Ctrl+C to stop.")
-    armed = False
+    active = False
+    pending_transcript = ""
     try:
         while True:
             settings = api.settings()
             wake_word = settings["wake_word"]
             if speaker:
                 speaker.configure(settings["tts_voice"], settings["tts_speed"])
-                speaker.prepare(settings["acknowledgement_phrases"])
-            print(f"Listening for “{wake_word}”…", flush=True)
-            audio = recorder.capture_utterance()
-            try:
-                transcript = transcribe(args.hex_bin, recorder, audio)
-            except RuntimeError as exc:
-                print(exc, file=sys.stderr)
-                print("Listening again…", file=sys.stderr)
-                continue
-            if not transcript:
-                continue
-            print(f"Heard: {transcript}")
-            command = ""
-            if armed:
-                command, armed = transcript, False
+                speaker.prepare(
+                    settings["acknowledgement_phrases"]
+                    + settings["activation_phrases"]
+                    + ["Okay."]
+                )
+
+            if pending_transcript:
+                transcript, pending_transcript = pending_transcript, ""
             else:
-                detected, remainder = extract_after_wake_word(transcript, wake_word)
-                if detected and remainder:
-                    command = remainder
-                elif detected:
-                    armed = True
-                    print("Wake word detected; waiting for the instruction…")
-            if not command:
+                label = "Listening for your next instruction…" if active else f"Listening for “{wake_word}”…"
+                print(label, flush=True)
+                audio = recorder.capture_utterance()
+                try:
+                    transcript = transcribe(args.hex_bin, recorder, audio)
+                except RuntimeError as exc:
+                    print(exc, file=sys.stderr)
+                    print("Listening again…", file=sys.stderr)
+                    continue
+                if not transcript:
+                    continue
+                print(f"Heard: {transcript}")
+
+            if not active:
+                detected, _ = extract_after_wake_word(transcript, wake_word)
+                if not detected:
+                    continue
+                active = True
+                cue = random.choice(settings["activation_phrases"])
+                print(f"Nancy: {cue}")
+                if speaker:
+                    speaker.speak(cue)
+                print("Conversation active. Say a stop phrase when you're finished.")
                 continue
-            print(f"You: {command}")
-            job_id = api.submit(command, args.conversation)
+
+            if matches_stop_phrase(transcript, settings["stop_phrases"]):
+                active = False
+                print("Nancy: Okay. Conversation closed.")
+                if speaker:
+                    speaker.speak("Okay.")
+                continue
+
+            print(f"You: {transcript}")
+            job_id = api.submit(transcript, args.conversation)
             acknowledgement = random.choice(settings["acknowledgement_phrases"])
             print(f"Nancy: {acknowledgement}")
             if speaker:
@@ -168,7 +195,28 @@ def main() -> int:
             answer = api.wait(job_id)
             print(f"Nancy: {answer}")
             if speaker:
-                speaker.speak(answer)
+                player = speaker.start(answer)
+                barge_threshold = float(
+                    os.environ.get("NANCY_BARGE_IN_THRESHOLD", "0.035")
+                )
+                interrupted_audio = recorder.capture_utterance(
+                    stop_when=lambda: player.poll() is not None,
+                    threshold=barge_threshold,
+                )
+                if interrupted_audio is not None:
+                    player.terminate()
+                    player.wait(timeout=3)
+                    try:
+                        pending_transcript = transcribe(
+                            args.hex_bin, recorder, interrupted_audio
+                        )
+                    except RuntimeError as exc:
+                        print(exc, file=sys.stderr)
+                        pending_transcript = ""
+                    if pending_transcript:
+                        print(f"Interrupted by: {pending_transcript}")
+                else:
+                    player.wait()
     except KeyboardInterrupt:
         print("\nStopped.")
         return 0

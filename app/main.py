@@ -95,6 +95,22 @@ class AppSettings(BaseModel):
         min_length=1,
         max_length=20,
     )
+    activation_phrases: list[str] = Field(
+        default_factory=lambda: ["Hmm?", "Yes?", "Go on.", "Ready."],
+        min_length=1,
+        max_length=20,
+    )
+    stop_phrases: list[str] = Field(
+        default_factory=lambda: [
+            "That'll be all",
+            "That will be all",
+            "That's all",
+            "Stop listening",
+            "Goodbye Nancy",
+        ],
+        min_length=1,
+        max_length=20,
+    )
 
 
 def extract_final_text(payload: dict[str, Any]) -> str:
@@ -454,7 +470,18 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         value.acknowledgement_phrases = [
             phrase.strip() for phrase in value.acknowledgement_phrases if phrase.strip()
         ]
-        if not value.wake_word or not value.acknowledgement_phrases:
+        value.activation_phrases = [
+            phrase.strip() for phrase in value.activation_phrases if phrase.strip()
+        ]
+        value.stop_phrases = [
+            phrase.strip() for phrase in value.stop_phrases if phrase.strip()
+        ]
+        if not all((
+            value.wake_word,
+            value.acknowledgement_phrases,
+            value.activation_phrases,
+            value.stop_phrases,
+        )):
             raise HTTPException(status_code=422, detail="Settings cannot be empty")
         save_app_settings(request.app.state.settings.history_db_path, value)
         return value
