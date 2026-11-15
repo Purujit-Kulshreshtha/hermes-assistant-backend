@@ -1,10 +1,11 @@
-const CACHE = "nancy-shell-v8";
+const CACHE = "nancy-shell-v9";
 const ASSETS = [
   "/",
   "/styles.css",
   "/layout.css",
   "/voice.css",
   "/tts.css",
+  "/theme.css",
   "/app.js",
   "/voice.js",
   "/tts.js",

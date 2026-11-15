@@ -1,0 +1,210 @@
+:root {
+  color-scheme: dark;
+  --bg: #020807;
+  --panel: #07110f;
+  --line: #17463e;
+  --muted: #78a69e;
+  --text: #ddfff8;
+  --accent: #21e6c1;
+  --accent2: #00f5d4;
+  --danger: #ff6075;
+}
+
+body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 50% -15%, rgba(21, 184, 156, .2), transparent 38%),
+    radial-gradient(circle, rgba(52, 231, 197, .16) 1px, transparent 1.2px),
+    linear-gradient(rgba(0, 245, 212, .025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 245, 212, .025) 1px, transparent 1px);
+  background-size: auto, 22px 22px, 88px 88px, 88px 88px;
+  background-position: center, 0 0, 0 0, 0 0;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+body::before {
+  z-index: 0;
+  opacity: .2;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0,
+    transparent 3px,
+    rgba(33, 230, 193, .045) 4px
+  );
+}
+
+body::after {
+  z-index: 0;
+  opacity: .12;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 78px, rgba(33, 230, 193, .16) 79px 80px),
+    linear-gradient(180deg, transparent, rgba(33, 230, 193, .12), transparent);
+  background-size: auto, 100% 220px;
+  animation: matrix-drift 12s linear infinite;
+}
+
+.shell {
+  position: relative;
+  z-index: 1;
+}
+
+header {
+  background: linear-gradient(180deg, rgba(2, 8, 7, .98) 70%, rgba(2, 8, 7, .84));
+  border-bottom-color: rgba(33, 230, 193, .3);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .25);
+}
+
+h1,
+.empty h2 {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: -.035em;
+}
+
+h1 {
+  color: #effffb;
+  text-shadow: 0 0 22px rgba(33, 230, 193, .28);
+}
+
+.eyebrow,
+.message .meta,
+.status,
+.voice-status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.eyebrow {
+  color: var(--accent);
+  text-shadow: 0 0 12px rgba(33, 230, 193, .45);
+}
+
+.status.online i {
+  background: var(--accent2);
+  box-shadow: 0 0 7px var(--accent2), 0 0 0 4px rgba(0, 245, 212, .12);
+}
+
+.icon-button,
+.tts-actions button {
+  background: rgba(5, 19, 16, .88);
+  border-color: rgba(33, 230, 193, .26);
+  box-shadow: inset 0 0 18px rgba(33, 230, 193, .025);
+}
+
+.empty .mark {
+  color: #001511;
+  background: linear-gradient(145deg, #73ffe4, var(--accent));
+  box-shadow: 0 0 18px rgba(33, 230, 193, .3), 0 0 55px rgba(33, 230, 193, .12);
+}
+
+.message.assistant .bubble {
+  background: rgba(5, 18, 15, .9);
+  border-color: rgba(33, 230, 193, .2);
+  box-shadow: 0 9px 28px rgba(0, 0, 0, .22), inset 0 1px rgba(143, 255, 234, .025);
+}
+
+.message.user .bubble {
+  color: #001612;
+  background: linear-gradient(145deg, #69f8dc, #21cfae);
+  box-shadow: 0 0 20px rgba(33, 230, 193, .13);
+}
+
+#composer {
+  background: rgba(5, 18, 15, .9);
+  border-color: rgba(33, 230, 193, .28);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, .55), 0 0 28px rgba(33, 230, 193, .06);
+  backdrop-filter: blur(18px);
+}
+
+#voiceButton {
+  color: var(--accent);
+  background: #0a1b17;
+  border: 1px solid rgba(33, 230, 193, .28);
+}
+
+#voiceButton.recording {
+  color: #fff;
+  background: var(--danger);
+  border-color: transparent;
+  box-shadow: 0 0 18px rgba(255, 96, 117, .38);
+}
+
+#sendButton,
+.primary {
+  color: #001612;
+  background: linear-gradient(145deg, #68f8dc, var(--accent));
+  box-shadow: 0 0 18px rgba(33, 230, 193, .15);
+}
+
+.loader {
+  border-color: rgba(33, 230, 193, .2);
+  border-top-color: var(--accent);
+  filter: drop-shadow(0 0 5px rgba(33, 230, 193, .65));
+}
+
+dialog {
+  background: rgba(5, 17, 14, .98);
+  border: 1px solid rgba(33, 230, 193, .25);
+  box-shadow: 0 28px 90px #000, 0 0 40px rgba(33, 230, 193, .08);
+}
+
+dialog::backdrop {
+  background: rgba(0, 5, 4, .82);
+}
+
+.dialog-heading {
+  background: #05110e;
+}
+
+textarea,
+input,
+select {
+  background: #020b09;
+  border-color: rgba(33, 230, 193, .22);
+}
+
+textarea:focus,
+input:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(33, 230, 193, .09), 0 0 18px rgba(33, 230, 193, .07);
+}
+
+.switch-row input {
+  accent-color: var(--accent);
+}
+
+main,
+.dialog-card {
+  scrollbar-color: rgba(33, 230, 193, .35) transparent;
+}
+
+@media (hover: hover) {
+  .icon-button:hover,
+  .tts-actions button:hover,
+  #voiceButton:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 18px rgba(33, 230, 193, .12);
+  }
+
+  #sendButton:hover,
+  .primary:hover {
+    filter: brightness(1.08);
+  }
+}
+
+@keyframes matrix-drift {
+  from { background-position: 0 0, 0 -220px; }
+  to { background-position: 0 0, 0 220px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::after {
+    animation: none;
+  }
+}
