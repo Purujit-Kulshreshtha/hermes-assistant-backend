@@ -1,0 +1,20 @@
+[Unit]
+Description=Hermes Voice Control API
+After=network-online.target hermes-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/hermes-control
+EnvironmentFile=/opt/hermes-control/.env
+ExecStart=/opt/hermes-control/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8787
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
