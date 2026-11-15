@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from difflib import SequenceMatcher
 import json
 import os
 import random
@@ -93,6 +94,33 @@ def matches_stop_phrase(transcript: str, phrases: list[str]) -> bool:
 
 def is_wake_word_only(transcript: str, wake_word: str) -> bool:
     return normalize_phrase(transcript) == normalize_phrase(wake_word)
+
+
+def is_likely_echo(
+    transcript: str,
+    spoken_texts: list[str],
+    similarity_threshold: float = 0.78,
+) -> bool:
+    """Return true when a transcript is probably Nancy's speaker output."""
+    heard = normalize_phrase(transcript)
+    if not heard:
+        return False
+    heard_tokens = heard.split()
+    for spoken_text in spoken_texts:
+        spoken = normalize_phrase(spoken_text)
+        if not spoken:
+            continue
+        if heard == spoken:
+            return True
+        if len(heard_tokens) >= 3 and (heard in spoken or spoken in heard):
+            return True
+        if SequenceMatcher(None, heard, spoken).ratio() >= similarity_threshold:
+            return True
+        spoken_tokens = set(spoken.split())
+        token_overlap = sum(token in spoken_tokens for token in heard_tokens)
+        if len(heard_tokens) >= 4 and token_overlap / len(heard_tokens) >= 0.85:
+            return True
+    return False
 
 
 def transcribe(hex_bin: Path, recorder: UtteranceRecorder, audio) -> str:
@@ -223,24 +251,44 @@ def main() -> int:
                 barge_threshold = float(
                     os.environ.get("NANCY_BARGE_IN_THRESHOLD", "0.035")
                 )
-                interrupted_audio = recorder.capture_utterance(
-                    stop_when=lambda: player.poll() is not None,
-                    threshold=barge_threshold,
+                echo_threshold = float(
+                    os.environ.get("NANCY_ECHO_SIMILARITY", "0.78")
                 )
-                if interrupted_audio is not None:
-                    player.terminate()
-                    player.wait(timeout=3)
+                spoken_context = [answer, acknowledgement]
+                while player.poll() is None:
+                    interrupted_audio = recorder.capture_utterance(
+                        stop_when=lambda: player.poll() is not None,
+                        threshold=barge_threshold,
+                    )
+                    if interrupted_audio is None:
+                        break
                     try:
-                        pending_transcript = transcribe(
+                        candidate = transcribe(
                             args.hex_bin, recorder, interrupted_audio
                         )
                     except RuntimeError as exc:
                         print(exc, file=sys.stderr)
-                        pending_transcript = ""
-                    if pending_transcript:
-                        print(f"Interrupted by: {pending_transcript}")
-                else:
+                        continue
+                    if not candidate:
+                        continue
+                    if is_likely_echo(candidate, spoken_context, echo_threshold):
+                        print(f"Ignored speaker echo: {candidate}")
+                        continue
+                    pending_transcript = candidate
+                    print(f"Interrupted by: {pending_transcript}")
+                    player.terminate()
+                    try:
+                        player.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        player.kill()
+                        player.wait()
+                    break
+                if player.poll() is None:
                     player.wait()
+                if not pending_transcript:
+                    # Closing and reopening the input stream drops speaker audio
+                    # still buffered by macOS after playback finishes.
+                    time.sleep(float(os.environ.get("NANCY_ECHO_COOLDOWN", "0.6")))
     except KeyboardInterrupt:
         print("\nStopped.")
         return 0
