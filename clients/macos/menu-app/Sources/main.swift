@@ -1,9 +1,8 @@
 import AppKit
 import WebKit
 
-@main
 final class NancyApp: NSObject, NSApplicationDelegate {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var companion: Process?
     private var chatWindow: NSWindow?
     private var statusMenuItem: NSMenuItem!
@@ -23,6 +22,7 @@ final class NancyApp: NSObject, NSApplicationDelegate {
             systemSymbolName: "waveform.circle.fill",
             accessibilityDescription: "Nancy"
         )
+        statusItem.button?.title = " Nancy"
         statusItem.button?.toolTip = "Nancy"
 
         let menu = NSMenu()
@@ -168,5 +168,15 @@ final class NancyApp: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+}
+
+@main
+struct NancyMain {
+    static func main() {
+        let application = NSApplication.shared
+        let delegate = NancyApp()
+        application.delegate = delegate
+        application.run()
     }
 }

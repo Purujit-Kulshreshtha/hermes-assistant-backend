@@ -37,6 +37,10 @@ cat > "$plist" <<EOF
 EOF
 
 launchctl bootout "gui/$UID/$label" 2>/dev/null || true
-launchctl bootstrap "gui/$UID" "$plist"
+sleep 1
+launchctl bootstrap "gui/$UID" "$plist" || {
+  sleep 1
+  launchctl bootstrap "gui/$UID" "$plist"
+}
 launchctl kickstart "gui/$UID/$label"
 echo "Installed Nancy in $app"
