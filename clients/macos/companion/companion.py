@@ -78,7 +78,6 @@ def extract_after_wake_word(transcript: str, wake_word: str) -> tuple[bool, str]
 
 
 def run_hex_listener(hex_bin: Path):
-    subprocess.run([str(hex_bin), "start"], check=True)
     process = subprocess.Popen(
         [str(hex_bin), "listen"],
         stdout=subprocess.PIPE,
@@ -131,6 +130,7 @@ def main() -> int:
             print(f"Listening for “{wake_word}”…")
             listener = run_hex_listener(args.hex_bin)
             command = ""
+            listener_error = ""
             try:
                 assert listener.stdout is not None
                 for line in listener.stdout:
@@ -149,10 +149,19 @@ def main() -> int:
                     if detected:
                         armed = True
                         print("Wake word detected; waiting for the instruction…")
+                if not command:
+                    listener.wait()
+                    if listener.stderr is not None:
+                        listener_error = listener.stderr.read().strip()
             finally:
-                stop_listener(listener)
+                if listener.poll() is None:
+                    stop_listener(listener)
 
             if not command:
+                detail = listener_error or f"Hex listen exited with code {listener.returncode}"
+                print(f"Hex listener stopped: {detail}", file=sys.stderr)
+                print("Retrying in 3 seconds…", file=sys.stderr)
+                time.sleep(3)
                 continue
             print(f"You: {command}")
             job_id = api.submit(command, args.conversation)

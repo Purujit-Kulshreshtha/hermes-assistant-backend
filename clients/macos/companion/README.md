@@ -18,6 +18,9 @@ brew install uv
 
 The first run downloads Kokoro 82M. Later synthesis is local.
 
+The companion invokes `hex listen` directly. Do not start a second push-to-talk
+client at the same time; only one process should own Hex listening.
+
 ## Run
 
 The API key must already be stored by `../setup-keychain.sh`.

@@ -9,5 +9,5 @@ fi
 
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python \
-  'mlx-audio>=0.3,<1' 'misaki>=0.9,<1' 'soundfile>=0.13,<1'
+  'mlx-audio>=0.3,<1' 'misaki[en]>=0.9,<1' 'soundfile>=0.13,<1'
 echo "Kokoro installed. The model downloads on the first companion run."
