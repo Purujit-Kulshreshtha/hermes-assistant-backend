@@ -335,3 +335,5 @@ async def test_pwa_is_served() -> None:
     assert response.status_code == 200
     assert "Nancy" in response.text
     assert 'id="voiceButton"' in response.text
+    assert 'id="testVoice"' in response.text
+    assert '/tts.js' in response.text

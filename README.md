@@ -106,6 +106,16 @@ Voice sessions begin with the wake word alone, remain active for follow-ups, and
 close on configurable stop phrases. Response playback supports speech barge-in;
 stop-speaking controls are handled locally instead of being sent to Hermes.
 
+### Browser text-to-speech
+
+The PWA runs Kokoro-82M in a Web Worker and caches the downloaded model in the
+browser. It uses WebGPU with WASM fallback, speaks replies sentence by sentence,
+and stops playback as soon as voice recording begins. Enable **Browser speech**
+in Settings and use **Test voice** to download the model and verify playback.
+The first load requires access to jsDelivr and Hugging Face; later use comes
+from the browser cache. If neural TTS cannot load, Nancy falls back to the
+device's system speech engine.
+
 ## OpenTodo reminder delivery
 
 In OpenTodo, open **Settings → Notifications → Delivery channels**, add a
