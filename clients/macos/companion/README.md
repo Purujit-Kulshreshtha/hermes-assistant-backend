@@ -1,4 +1,7 @@
-# Nancy macOS companion
+# Nancy macOS companion (deprecated)
+
+> Deprecated in favour of browser-recorded voice notes processed by the Oracle
+> backend. No new features will be added here.
 
 The PWA owns chat and settings. This small local process provides the abilities a
 background browser cannot: continuous Hex listening and high-quality local TTS.

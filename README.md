@@ -78,6 +78,10 @@ Keep port `8787` closed in OCI. Caddy publishes the service over HTTPS on port
 
 ## Clients
 
+The native macOS companion and menu-bar wrapper are deprecated. Voice input is
+moving to chunked browser recording with server-side transcription; their source
+remains under `clients/macos` only for migration.
+
 The initial push-to-talk client is in `clients/macos`. It uses Hex for local
 speech-to-text and macOS `say` for text-to-speech. See its README for setup.
 

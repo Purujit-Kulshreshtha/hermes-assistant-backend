@@ -1,4 +1,7 @@
-# Nancy menu-bar app
+# Nancy menu-bar app (deprecated)
+
+> Deprecated in favour of the cross-platform PWA. Kept temporarily so existing
+> installations can be removed cleanly.
 
 Native AppKit wrapper for the Nancy voice companion. It displays a waveform in
 the macOS menu bar, starts and stops the Python listener, opens the PWA chat in a

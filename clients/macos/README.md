@@ -1,4 +1,8 @@
-# macOS voice client
+# macOS voice client (deprecated)
+
+> Deprecated: new voice-input and notification work lives in the web app. This
+> client is retained temporarily for migration and should not be installed on
+> new devices.
 
 This push-to-talk client uses the installed Hex app for recording and local
 transcription, sends the resulting text to the Hermes control API, and reads the
