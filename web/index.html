@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#151412">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; img-src 'self'; style-src 'self'; script-src 'self' https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; img-src 'self'; style-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'">
   <title>Nancy</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -66,17 +66,9 @@
   <dialog id="settingsDialog">
     <form id="settingsForm" method="dialog" class="dialog-card settings-card">
       <div class="dialog-heading">
-        <div><div class="eyebrow">VOICE SETTINGS</div><h2>Companion</h2></div>
+        <div><div class="eyebrow">VOICE SETTINGS</div><h2>Browser speech</h2></div>
         <button type="button" id="closeSettings" class="icon-button">×</button>
       </div>
-      <label>Wake word<input id="wakeWord" required maxlength="40"></label>
-      <label>Mac keyboard trigger
-        <select id="keyboardTrigger">
-          <option value="rightOption">Double-tap Right Option</option>
-          <option value="leftOption">Double-tap Left Option</option>
-          <option value="disabled">Disabled</option>
-        </select>
-      </label>
       <div class="two-column">
         <label>Voice
           <select id="ttsVoice">
@@ -90,21 +82,6 @@
         </label>
         <label>Speed<input id="ttsSpeed" type="number" min="0.6" max="1.5" step="0.05"></label>
       </div>
-      <label>Pause before sending (seconds)
-        <input id="endSilenceSeconds" type="number" min="0.5" max="3" step="0.1">
-      </label>
-      <label>Acknowledgements
-        <textarea id="ackPhrases" rows="6" placeholder="One phrase per line"></textarea>
-      </label>
-      <label>Listening cues
-        <textarea id="activationPhrases" rows="4" placeholder="One phrase per line"></textarea>
-      </label>
-      <label>Stop-listening phrases
-        <textarea id="stopPhrases" rows="5" placeholder="One phrase per line"></textarea>
-      </label>
-      <label>Stop-speaking phrases
-        <textarea id="silencePhrases" rows="4" placeholder="One phrase per line"></textarea>
-      </label>
       <label class="switch-row">
         <span><strong>Browser speech</strong><small>Kokoro neural voice; first use downloads the model</small></span>
         <input id="browserSpeech" type="checkbox">

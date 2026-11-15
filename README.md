@@ -112,9 +112,11 @@ The PWA runs Kokoro-82M in a Web Worker and caches the downloaded model in the
 browser. It uses WebGPU with WASM fallback, speaks replies sentence by sentence,
 and stops playback as soon as voice recording begins. Enable **Browser speech**
 in Settings and use **Test voice** to download the model and verify playback.
-The first load requires access to jsDelivr and Hugging Face; later use comes
-from the browser cache. If neural TTS cannot load, Nancy falls back to the
-device's system speech engine.
+The Kokoro JavaScript runtime is pinned and served from `web/vendor`; its
+Apache-2.0 license is included beside it. The first load requires access to
+jsDelivr for ONNX runtime files and Hugging Face for model weights; later use
+comes from the browser cache. If neural TTS cannot load, Nancy falls back to
+the device's system speech engine and shows the failure detail in Settings.
 
 ## OpenTodo reminder delivery
 

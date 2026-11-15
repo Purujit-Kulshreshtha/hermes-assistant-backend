@@ -1,4 +1,4 @@
-const CACHE = "nancy-shell-v5";
+const CACHE = "nancy-shell-v6";
 const ASSETS = [
   "/",
   "/styles.css",
@@ -9,6 +9,7 @@ const ASSETS = [
   "/voice.js",
   "/tts.js",
   "/tts-worker.js",
+  "/vendor/kokoro.web.js",
   "/manifest.webmanifest",
   "/icon.svg",
 ];

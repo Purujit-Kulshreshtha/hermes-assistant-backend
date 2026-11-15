@@ -337,3 +337,5 @@ async def test_pwa_is_served() -> None:
     assert 'id="voiceButton"' in response.text
     assert 'id="testVoice"' in response.text
     assert '/tts.js' in response.text
+    assert 'id="wakeWord"' not in response.text
+    assert 'id="keyboardTrigger"' not in response.text
