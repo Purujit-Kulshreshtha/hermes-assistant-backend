@@ -61,8 +61,11 @@ class API:
             "/commands", "POST", {"text": text, "conversation": conversation}
         )["id"]
 
-    def wait(self, job_id: str) -> str:
+    def wait(self, job_id: str, timeout: float = 150) -> str:
+        deadline = time.monotonic() + timeout
         while True:
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Hermes did not finish before the command timeout")
             job = self.request(f"/commands/{job_id}")
             if job["status"] == "completed":
                 return job["response"]
@@ -86,6 +89,10 @@ def normalize_phrase(value: str) -> str:
 def matches_stop_phrase(transcript: str, phrases: list[str]) -> bool:
     normalized = normalize_phrase(transcript)
     return any(normalize_phrase(phrase) in normalized for phrase in phrases)
+
+
+def is_wake_word_only(transcript: str, wake_word: str) -> bool:
+    return normalize_phrase(transcript) == normalize_phrase(wake_word)
 
 
 def transcribe(hex_bin: Path, recorder: UtteranceRecorder, audio) -> str:
@@ -179,20 +186,36 @@ def main() -> int:
                 print("Conversation active. Say a stop phrase when you're finished.")
                 continue
 
-            if matches_stop_phrase(transcript, settings["stop_phrases"]):
+            if (
+                is_wake_word_only(transcript, wake_word)
+                or matches_stop_phrase(transcript, settings["stop_phrases"])
+            ):
                 active = False
                 print("Nancy: Okay. Conversation closed.")
                 if speaker:
                     speaker.speak("Okay.")
                 continue
 
+            if matches_stop_phrase(transcript, settings["silence_phrases"]):
+                print("Nancy: Speech stopped. Still listening.")
+                continue
+
             print(f"You: {transcript}")
-            job_id = api.submit(transcript, args.conversation)
+            try:
+                job_id = api.submit(transcript, args.conversation)
+            except RuntimeError as exc:
+                print(f"Could not submit command: {exc}", file=sys.stderr)
+                continue
             acknowledgement = random.choice(settings["acknowledgement_phrases"])
             print(f"Nancy: {acknowledgement}")
             if speaker:
                 speaker.speak(acknowledgement)
-            answer = api.wait(job_id)
+            try:
+                answer = api.wait(job_id)
+            except RuntimeError as exc:
+                print(f"Command failed: {exc}", file=sys.stderr)
+                print("Returning to active listening…", file=sys.stderr)
+                continue
             print(f"Nancy: {answer}")
             if speaker:
                 player = speaker.start(answer)

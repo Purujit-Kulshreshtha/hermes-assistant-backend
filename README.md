@@ -82,4 +82,5 @@ in `clients/macos/companion`; it uses local voice-activity capture, Hex file
 transcription and local Kokoro TTS, and reads its settings from the PWA.
 
 Voice sessions begin with the wake word alone, remain active for follow-ups, and
-close on configurable stop phrases. Response playback supports speech barge-in.
+close on configurable stop phrases. Response playback supports speech barge-in;
+stop-speaking controls are handled locally instead of being sent to Hermes.

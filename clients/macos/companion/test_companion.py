@@ -1,6 +1,6 @@
 import unittest
 
-from companion import extract_after_wake_word, matches_stop_phrase
+from companion import extract_after_wake_word, is_wake_word_only, matches_stop_phrase
 
 
 class WakeWordTests(unittest.TestCase):
@@ -23,6 +23,13 @@ class WakeWordTests(unittest.TestCase):
 
     def test_does_not_stop_on_unrelated_speech(self):
         self.assertFalse(matches_stop_phrase("Create another task", ["That's all"]))
+
+    def test_stop_talking_is_handled_locally(self):
+        self.assertTrue(matches_stop_phrase("Please stop talking", ["Stop talking"]))
+
+    def test_wake_word_alone_resets_active_session(self):
+        self.assertTrue(is_wake_word_only("Nancy!", "Nancy"))
+        self.assertFalse(is_wake_word_only("Nancy create a task", "Nancy"))
 
 
 if __name__ == "__main__":

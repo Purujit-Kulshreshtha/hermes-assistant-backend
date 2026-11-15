@@ -111,6 +111,16 @@ class AppSettings(BaseModel):
         min_length=1,
         max_length=20,
     )
+    silence_phrases: list[str] = Field(
+        default_factory=lambda: [
+            "Stop talking",
+            "Be quiet",
+            "Quiet",
+            "Enough",
+        ],
+        min_length=1,
+        max_length=20,
+    )
 
 
 def extract_final_text(payload: dict[str, Any]) -> str:
@@ -476,11 +486,15 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         value.stop_phrases = [
             phrase.strip() for phrase in value.stop_phrases if phrase.strip()
         ]
+        value.silence_phrases = [
+            phrase.strip() for phrase in value.silence_phrases if phrase.strip()
+        ]
         if not all((
             value.wake_word,
             value.acknowledgement_phrases,
             value.activation_phrases,
             value.stop_phrases,
+            value.silence_phrases,
         )):
             raise HTTPException(status_code=422, detail="Settings cannot be empty")
         save_app_settings(request.app.state.settings.history_db_path, value)

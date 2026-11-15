@@ -60,6 +60,15 @@ Adjust sensitivity when needed:
 export NANCY_BARGE_IN_THRESHOLD=0.04
 ```
 
+Voice controls are handled locally and never sent to Hermes:
+
+- “Stop talking” interrupts speech but leaves the conversation active.
+- “That'll be all” closes the conversation.
+- Saying the wake word alone while active resets to standby.
+
+If a Hermes command stalls, the companion abandons it after 150 seconds and
+returns to active listening.
+
 For a transcription-only test without installing Kokoro:
 
 ```bash
