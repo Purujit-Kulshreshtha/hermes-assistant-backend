@@ -10,6 +10,9 @@ profile. Hermes and OpenTodo remain bound to localhost.
   assistant's final text.
 - `GET /history?conversation=voice-main` — returns persistent chat history for
   all clients using that conversation.
+- `POST /commands` — accepts work immediately with HTTP 202.
+- `GET /commands/{id}` — reports queued, running, completed or failed state.
+- `GET/PUT /settings` — shared wake-word, voice and acknowledgement settings.
 
 ## Local development
 
@@ -66,10 +69,14 @@ sudo systemctl status hermes-control
 curl http://127.0.0.1:8787/health
 ```
 
-Keep port `8787` closed in OCI. A Cloudflare Tunnel will publish this service
-later, while ports `8642` (Hermes) and `8080` (OpenTodo) stay private.
+Keep port `8787` closed in OCI. Caddy publishes the service over HTTPS on port
+443, while ports `8642` (Hermes) and `8080` (OpenTodo) stay private.
 
 ## Clients
 
 The initial push-to-talk client is in `clients/macos`. It uses Hex for local
 speech-to-text and macOS `say` for text-to-speech. See its README for setup.
+
+The installable PWA is served at the root URL. The always-on macOS companion is
+in `clients/macos/companion`; it uses Hex continuous listening and local Kokoro
+TTS, and reads its wake word from the PWA settings.

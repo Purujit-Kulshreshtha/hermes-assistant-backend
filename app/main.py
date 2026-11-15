@@ -1,13 +1,15 @@
 import hmac
 import os
 import sqlite3
+import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
@@ -62,6 +64,39 @@ class HealthResponse(BaseModel):
     status: str = "ok"
 
 
+class JobAccepted(BaseModel):
+    id: str
+    status: str = "queued"
+
+
+class JobResponse(BaseModel):
+    id: str
+    status: str
+    text: str
+    conversation: str
+    response: str | None = None
+    error: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class AppSettings(BaseModel):
+    wake_word: str = Field(default="Nancy", min_length=1, max_length=40)
+    tts_voice: str = Field(default="af_heart", min_length=1, max_length=40)
+    tts_speed: float = Field(default=1.0, ge=0.6, le=1.5)
+    acknowledgement_phrases: list[str] = Field(
+        default_factory=lambda: [
+            "Got it.",
+            "Working on it.",
+            "I'll bring that up.",
+            "Just one second.",
+            "Let me check.",
+        ],
+        min_length=1,
+        max_length=20,
+    )
+
+
 def extract_final_text(payload: dict[str, Any]) -> str:
     parts: list[str] = []
     for item in payload.get("output", []):
@@ -89,6 +124,33 @@ def initialize_history(path: Path) -> None:
                 created_at TEXT NOT NULL
             )
             """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                conversation TEXT NOT NULL,
+                user_text TEXT NOT NULL,
+                assistant_text TEXT,
+                response_id TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                value TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO app_settings (id, value) VALUES (1, ?)",
+            (AppSettings().model_dump_json(),),
         )
         connection.execute(
             """
@@ -142,6 +204,102 @@ def load_history(path: Path, conversation: str, limit: int) -> list[HistoryItem]
         )
         for row in rows
     ]
+
+
+def load_app_settings(path: Path) -> AppSettings:
+    with sqlite3.connect(path) as connection:
+        row = connection.execute(
+            "SELECT value FROM app_settings WHERE id = 1"
+        ).fetchone()
+    return AppSettings.model_validate_json(row[0]) if row else AppSettings()
+
+
+def save_app_settings(path: Path, value: AppSettings) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO app_settings (id, value) VALUES (1, ?)",
+            (value.model_dump_json(),),
+        )
+
+
+def create_job(path: Path, body: CommandRequest) -> JobAccepted:
+    job_id = uuid.uuid4().hex
+    now = datetime.now(UTC).isoformat()
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            INSERT INTO jobs
+                (id, status, conversation, user_text, created_at, updated_at)
+            VALUES (?, 'queued', ?, ?, ?, ?)
+            """,
+            (job_id, body.conversation or DEFAULT_CONVERSATION, body.text, now, now),
+        )
+    return JobAccepted(id=job_id)
+
+
+def load_job(path: Path, job_id: str) -> JobResponse | None:
+    with sqlite3.connect(path) as connection:
+        row = connection.execute(
+            """
+            SELECT id, status, user_text, conversation, assistant_text, error,
+                   created_at, updated_at
+            FROM jobs WHERE id = ?
+            """,
+            (job_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return JobResponse(
+        id=row[0], status=row[1], text=row[2], conversation=row[3],
+        response=row[4], error=row[5], created_at=row[6], updated_at=row[7]
+    )
+
+
+async def process_job(app: FastAPI, job_id: str) -> None:
+    settings: Settings = app.state.settings
+    job = load_job(settings.history_db_path, job_id)
+    if not job:
+        return
+    now = datetime.now(UTC).isoformat()
+    with sqlite3.connect(settings.history_db_path) as connection:
+        connection.execute(
+            "UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?",
+            (now, job_id),
+        )
+    try:
+        response = await app.state.hermes_client.post(
+            settings.hermes_url,
+            headers={"Authorization": f"Bearer {settings.hermes_api_key}"},
+            json={
+                "model": settings.hermes_model,
+                "input": job.text,
+                "conversation": job.conversation,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("status") != "completed":
+            raise ValueError(f"Unexpected Hermes status: {payload.get('status')}")
+        answer = extract_final_text(payload)
+        now = datetime.now(UTC).isoformat()
+        save_interaction(
+            settings.history_db_path, job.conversation, job.text, answer,
+            payload["id"], now,
+        )
+        with sqlite3.connect(settings.history_db_path) as connection:
+            connection.execute(
+                """
+                UPDATE jobs SET status = 'completed', assistant_text = ?,
+                    response_id = ?, updated_at = ? WHERE id = ?
+                """,
+                (answer, payload["id"], now, job_id),
+            )
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        with sqlite3.connect(settings.history_db_path) as connection:
+            connection.execute(
+                "UPDATE jobs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+                (str(exc), datetime.now(UTC).isoformat(), job_id),
+            )
 
 
 def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
@@ -251,6 +409,59 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
             conversation=conversation,
             items=load_history(settings.history_db_path, conversation, limit),
         )
+
+    @app.post(
+        "/commands",
+        response_model=JobAccepted,
+        status_code=status.HTTP_202_ACCEPTED,
+        dependencies=[Depends(authenticate)],
+    )
+    async def commands(
+        body: CommandRequest,
+        request: Request,
+        background_tasks: BackgroundTasks,
+    ) -> JobAccepted:
+        accepted = create_job(request.app.state.settings.history_db_path, body)
+        background_tasks.add_task(process_job, request.app, accepted.id)
+        return accepted
+
+    @app.get(
+        "/commands/{job_id}",
+        response_model=JobResponse,
+        dependencies=[Depends(authenticate)],
+    )
+    async def command_status(job_id: str, request: Request) -> JobResponse:
+        job = load_job(request.app.state.settings.history_db_path, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Command not found")
+        return job
+
+    @app.get(
+        "/settings",
+        response_model=AppSettings,
+        dependencies=[Depends(authenticate)],
+    )
+    async def get_settings(request: Request) -> AppSettings:
+        return load_app_settings(request.app.state.settings.history_db_path)
+
+    @app.put(
+        "/settings",
+        response_model=AppSettings,
+        dependencies=[Depends(authenticate)],
+    )
+    async def put_settings(value: AppSettings, request: Request) -> AppSettings:
+        value.wake_word = value.wake_word.strip()
+        value.acknowledgement_phrases = [
+            phrase.strip() for phrase in value.acknowledgement_phrases if phrase.strip()
+        ]
+        if not value.wake_word or not value.acknowledgement_phrases:
+            raise HTTPException(status_code=422, detail="Settings cannot be empty")
+        save_app_settings(request.app.state.settings.history_db_path, value)
+        return value
+
+    web_dir = Path(__file__).resolve().parent.parent / "web"
+    if web_dir.is_dir():
+        app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
 
     return app
 
