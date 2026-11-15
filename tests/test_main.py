@@ -1,3 +1,8 @@
+import hashlib
+import hmac
+import json
+import time
+
 import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient, MockTransport, Response
@@ -9,6 +14,7 @@ from app.main import create_app, extract_final_text
 def environment(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("CONTROL_API_KEY", "control-test-key")
     monkeypatch.setenv("HERMES_API_KEY", "hermes-test-key")
+    monkeypatch.setenv("OPENTODO_WEBHOOK_SECRET", "whsec_test-secret")
     monkeypatch.setenv("HISTORY_DB_PATH", str(tmp_path / "history.db"))
 
 
@@ -24,6 +30,66 @@ def test_extract_final_text_ignores_tool_calls() -> None:
         ]
     }
     assert extract_final_text(payload) == "Done."
+
+
+@pytest.mark.asyncio
+async def test_opentodo_reminder_webhook_is_verified_and_deduplicated() -> None:
+    app = create_app(MockTransport(lambda request: Response(500)))
+    payload = {
+        "version": 1,
+        "id": "delivery-1",
+        "event": "reminder",
+        "createdAt": 1760000000000,
+        "title": "OpenTodo",
+        "message": "A reminder is due",
+        "url": "https://todo.example/?task=task-1",
+        "task": {"id": "task-1", "title": "Drink water"},
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    timestamp = str(int(time.time()))
+    signature = "v1=" + hmac.new(
+        b"whsec_test-secret", timestamp.encode() + b"." + body, hashlib.sha256
+    ).hexdigest()
+    webhook_headers = {
+        "X-OpenTodo-Timestamp": timestamp,
+        "X-OpenTodo-Signature": signature,
+        "Content-Type": "application/json",
+    }
+    auth = {"Authorization": "Bearer control-test-key"}
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            first = await client.post(
+                "/webhooks/opentodo", content=body, headers=webhook_headers
+            )
+            duplicate = await client.post(
+                "/webhooks/opentodo", content=body, headers=webhook_headers
+            )
+            notifications = await client.get("/notifications", headers=auth)
+
+    assert first.status_code == 202
+    assert duplicate.status_code == 202
+    assert len(notifications.json()["items"]) == 1
+    assert notifications.json()["items"][0]["task_title"] == "Drink water"
+
+
+@pytest.mark.asyncio
+async def test_opentodo_webhook_rejects_bad_signature() -> None:
+    app = create_app(MockTransport(lambda request: Response(500)))
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/webhooks/opentodo",
+                content=b"{}",
+                headers={
+                    "X-OpenTodo-Timestamp": str(int(time.time())),
+                    "X-OpenTodo-Signature": "v1=wrong",
+                },
+            )
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

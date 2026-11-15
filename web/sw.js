@@ -1,4 +1,4 @@
-const CACHE = "nancy-shell-v2";
+const CACHE = "nancy-shell-v3";
 const ASSETS = [
   "/",
   "/styles.css",

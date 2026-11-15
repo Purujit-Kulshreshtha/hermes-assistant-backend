@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from difflib import SequenceMatcher
+import fcntl
 import json
 import os
 import random
@@ -30,6 +31,11 @@ CONFIG_TRIGGERED = threading.Event()
 HOTKEY_REQUEST = (
     Path.home() / "Library/Application Support/Nancy/hotkey-request"
 )
+NOTIFICATION_CURSOR = (
+    Path.home() / "Library/Application Support/Nancy/notification-cursor"
+)
+NOTIFICATION_SOUND = Path("/System/Library/Sounds/Glass.aiff")
+INSTANCE_LOCK = Path.home() / "Library/Application Support/Nancy/companion.lock"
 
 
 def emit_state(state: str) -> None:
@@ -79,6 +85,9 @@ class API:
 
     def save_settings(self, value: dict) -> dict:
         return self.request("/settings", "PUT", value)
+
+    def notifications(self, after: int) -> dict:
+        return self.request(f"/notifications?after={after}&limit=100")
 
     def submit(self, text: str, conversation: str) -> str:
         return self.request(
@@ -166,6 +175,56 @@ def transcribe(hex_bin: Path, recorder: UtteranceRecorder, audio) -> str:
         path.unlink(missing_ok=True)
 
 
+def load_notification_cursor() -> int:
+    try:
+        return int(NOTIFICATION_CURSOR.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return 0
+
+
+def save_notification_cursor(cursor: int) -> None:
+    NOTIFICATION_CURSOR.parent.mkdir(parents=True, exist_ok=True)
+    NOTIFICATION_CURSOR.write_text(str(cursor))
+
+
+def acquire_instance_lock():
+    INSTANCE_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    handle = INSTANCE_LOCK.open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
+def deliver_notifications(api: API, speaker, cursor: int, active: bool) -> int:
+    try:
+        result = api.notifications(cursor)
+    except RuntimeError as exc:
+        print(f"Could not check reminders: {exc}", file=sys.stderr)
+        return cursor
+    for notification in result.get("items", []):
+        text = notification.get("task_title") or notification.get("message")
+        spoken = f"Reminder. {text}"
+        print(f"Nancy reminder: {text}")
+        emit_state("speaking")
+        if NOTIFICATION_SOUND.is_file():
+            subprocess.run(
+                ["afplay", str(NOTIFICATION_SOUND)], check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        if speaker:
+            speaker.speak(spoken)
+        cursor = int(notification["cursor"])
+        save_notification_cursor(cursor)
+    if result.get("items"):
+        emit_state("listening" if active else "idle")
+    return cursor
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="https://voice-api.builtforyou.live")
@@ -173,6 +232,10 @@ def main() -> int:
     parser.add_argument("--hex-bin", type=Path, default=HEX)
     parser.add_argument("--print-only", action="store_true", help="Do not synthesize speech")
     args = parser.parse_args()
+    instance_lock = acquire_instance_lock()
+    if instance_lock is None:
+        print("Nancy companion is already running.", file=sys.stderr)
+        return 0
     signal.signal(signal.SIGUSR1, handle_hotkey)
     signal.signal(signal.SIGUSR2, handle_config_change)
     if not args.hex_bin.is_file():
@@ -200,6 +263,7 @@ def main() -> int:
     emit_state("idle")
     active = False
     pending_transcript = ""
+    notification_cursor = load_notification_cursor()
     try:
         while True:
             settings = api.settings()
@@ -223,6 +287,9 @@ def main() -> int:
                     + settings["activation_phrases"]
                     + ["Okay."]
                 )
+            notification_cursor = deliver_notifications(
+                api, speaker, notification_cursor, active
+            )
 
             if pending_transcript:
                 transcript, pending_transcript = pending_transcript, ""

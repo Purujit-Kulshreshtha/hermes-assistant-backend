@@ -1,6 +1,9 @@
 import hmac
+import hashlib
+import json
 import os
 import sqlite3
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -25,6 +28,7 @@ class Settings:
             "http://127.0.0.1:8642/p/voice/v1/responses",
         )
         self.hermes_model = os.environ.get("HERMES_MODEL", "voice")
+        self.opentodo_webhook_secret = os.environ.get("OPENTODO_WEBHOOK_SECRET", "")
         self.request_timeout = float(os.environ.get("REQUEST_TIMEOUT_SECONDS", "120"))
         self.history_db_path = Path(
             os.environ.get("HISTORY_DB_PATH", "data/history.db")
@@ -78,6 +82,22 @@ class JobResponse(BaseModel):
     error: str | None = None
     created_at: str
     updated_at: str
+
+
+class NotificationItem(BaseModel):
+    cursor: int
+    id: str
+    event: str
+    message: str
+    task_title: str | None = None
+    task_id: str | None = None
+    url: str | None = None
+    created_at: int
+
+
+class NotificationResponse(BaseModel):
+    items: list[NotificationItem]
+    cursor: int
 
 
 class AppSettings(BaseModel):
@@ -182,6 +202,21 @@ def initialize_history(path: Path) -> None:
         )
         connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS notification_events (
+                cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+                delivery_id TEXT NOT NULL UNIQUE,
+                event TEXT NOT NULL,
+                message TEXT NOT NULL,
+                task_title TEXT,
+                task_id TEXT,
+                url TEXT,
+                created_at INTEGER NOT NULL,
+                received_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
             CREATE INDEX IF NOT EXISTS interactions_conversation_id
             ON interactions (conversation, id)
             """
@@ -248,6 +283,63 @@ def save_app_settings(path: Path, value: AppSettings) -> None:
             "INSERT OR REPLACE INTO app_settings (id, value) VALUES (1, ?)",
             (value.model_dump_json(),),
         )
+
+
+def save_notification(path: Path, payload: dict[str, Any]) -> None:
+    task = payload.get("task") or {}
+    message = payload.get("message") or payload.get("body") or "A reminder is due"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO notification_events
+                (delivery_id, event, message, task_title, task_id, url,
+                 created_at, received_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["id"], payload.get("event", "reminder"), message,
+                task.get("title"), task.get("id"), payload.get("url"),
+                int(payload.get("createdAt") or time.time() * 1000),
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+
+def load_notifications(path: Path, after: int, limit: int = 100) -> NotificationResponse:
+    with sqlite3.connect(path) as connection:
+        rows = connection.execute(
+            """
+            SELECT cursor, delivery_id, event, message, task_title, task_id,
+                   url, created_at
+            FROM notification_events
+            WHERE cursor > ?
+            ORDER BY cursor ASC
+            LIMIT ?
+            """,
+            (after, limit),
+        ).fetchall()
+    items = [
+        NotificationItem(
+            cursor=row[0], id=row[1], event=row[2], message=row[3],
+            task_title=row[4], task_id=row[5], url=row[6], created_at=row[7],
+        )
+        for row in rows
+    ]
+    return NotificationResponse(items=items, cursor=items[-1].cursor if items else after)
+
+
+def valid_opentodo_signature(
+    secret: str, timestamp: str, body: bytes, signature: str,
+    tolerance_seconds: int = 300,
+) -> bool:
+    try:
+        fresh = abs(time.time() - int(timestamp)) <= tolerance_seconds
+    except (TypeError, ValueError):
+        return False
+    expected = "v1=" + hmac.new(
+        secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
+    ).hexdigest()
+    return fresh and hmac.compare_digest(expected, signature)
 
 
 def create_job(path: Path, body: CommandRequest) -> JobAccepted:
@@ -501,6 +593,42 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="Settings cannot be empty")
         save_app_settings(request.app.state.settings.history_db_path, value)
         return value
+
+    @app.post("/webhooks/opentodo", status_code=status.HTTP_202_ACCEPTED)
+    async def opentodo_webhook(request: Request) -> dict[str, bool]:
+        settings: Settings = request.app.state.settings
+        secret = settings.opentodo_webhook_secret
+        if not secret:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OpenTodo webhook is not configured",
+            )
+        body = await request.body()
+        timestamp = request.headers.get("X-OpenTodo-Timestamp", "")
+        signature = request.headers.get("X-OpenTodo-Signature", "")
+        if not valid_opentodo_signature(secret, timestamp, body, signature):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+        try:
+            payload = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid webhook body") from exc
+        if payload.get("event") == "reminder":
+            save_notification(settings.history_db_path, payload)
+        return {"accepted": True}
+
+    @app.get(
+        "/notifications",
+        response_model=NotificationResponse,
+        dependencies=[Depends(authenticate)],
+    )
+    async def notifications(
+        request: Request, after: int = 0, limit: int = 100,
+    ) -> NotificationResponse:
+        if after < 0 or not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="Invalid notification cursor")
+        return load_notifications(
+            request.app.state.settings.history_db_path, after, limit
+        )
 
     web_dir = Path(__file__).resolve().parent.parent / "web"
     if web_dir.is_dir():

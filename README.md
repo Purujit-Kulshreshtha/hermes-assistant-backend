@@ -13,6 +13,8 @@ profile. Hermes and OpenTodo remain bound to localhost.
 - `POST /commands` — accepts work immediately with HTTP 202.
 - `GET /commands/{id}` — reports queued, running, completed or failed state.
 - `GET/PUT /settings` — shared wake-word, voice and acknowledgement settings.
+- `POST /webhooks/opentodo` — receives signed OpenTodo reminder deliveries.
+- `GET /notifications?after=<cursor>` — lets authenticated clients consume reminders.
 
 ## Local development
 
@@ -52,6 +54,8 @@ pytest -q
 - `HERMES_MODEL`: defaults to `voice`.
 - `REQUEST_TIMEOUT_SECONDS`: defaults to `120`.
 - `HISTORY_DB_PATH`: persistent SQLite database location.
+- `OPENTODO_WEBHOOK_SECRET`: signing secret shown when the OpenTodo webhook
+  delivery channel is created.
 
 Never commit `.env`. The client-facing and Hermes keys must be different.
 
@@ -84,3 +88,12 @@ transcription and local Kokoro TTS, and reads its settings from the PWA.
 Voice sessions begin with the wake word alone, remain active for follow-ups, and
 close on configurable stop phrases. Response playback supports speech barge-in;
 stop-speaking controls are handled locally instead of being sent to Hermes.
+
+## OpenTodo reminder delivery
+
+In OpenTodo, open **Settings → Notifications → Delivery channels**, add a
+**Webhook**, and use `https://voice-api.builtforyou.live/webhooks/opentodo`.
+Enable **Reminders** and **Include task titles**. Put the signing secret shown by
+OpenTodo in `OPENTODO_WEBHOOK_SECRET`, restart `hermes-control`, then use the
+channel's **Send test** action. Reminder deliveries are verified, deduplicated,
+shown in Nancy's PWA, and spoken by the Mac companion after a notification sound.
