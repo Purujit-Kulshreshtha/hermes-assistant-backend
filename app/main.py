@@ -1,8 +1,11 @@
+import asyncio
 import hmac
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -29,10 +32,18 @@ class Settings:
         )
         self.hermes_model = os.environ.get("HERMES_MODEL", "voice")
         self.opentodo_webhook_secret = os.environ.get("OPENTODO_WEBHOOK_SECRET", "")
+        self.hex_bin = os.environ.get("HEX_BIN", "hex")
+        self.ffmpeg_bin = os.environ.get("FFMPEG_BIN", "ffmpeg")
         self.request_timeout = float(os.environ.get("REQUEST_TIMEOUT_SECONDS", "120"))
         self.history_db_path = Path(
             os.environ.get("HISTORY_DB_PATH", "data/history.db")
         )
+        self.voice_temp_dir = Path(os.environ.get(
+            "VOICE_TEMP_DIR", str(self.history_db_path.parent / "voice")
+        ))
+        self.voice_max_bytes = int(os.environ.get(
+            "VOICE_MAX_BYTES", str(50 * 1024 * 1024)
+        ))
 
         if not self.control_api_key:
             raise RuntimeError("CONTROL_API_KEY is required")
@@ -98,6 +109,24 @@ class NotificationItem(BaseModel):
 class NotificationResponse(BaseModel):
     items: list[NotificationItem]
     cursor: int
+
+
+class VoiceSessionRequest(BaseModel):
+    mime_type: Literal[
+        "audio/webm", "audio/webm;codecs=opus", "audio/ogg",
+        "audio/ogg;codecs=opus", "audio/mp4", "audio/wav",
+    ]
+
+
+class VoiceSessionResponse(BaseModel):
+    id: str
+    status: str
+
+
+class VoiceTranscriptionResponse(BaseModel):
+    id: str
+    status: str
+    transcript: str
 
 
 class AppSettings(BaseModel):
@@ -170,6 +199,33 @@ def initialize_history(path: Path) -> None:
                 assistant_text TEXT NOT NULL,
                 response_id TEXT NOT NULL UNIQUE,
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_sessions (
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                total_bytes INTEGER NOT NULL DEFAULT 0,
+                transcript TEXT,
+                error TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_chunks (
+                session_id TEXT NOT NULL,
+                sequence INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                PRIMARY KEY (session_id, sequence),
+                FOREIGN KEY (session_id) REFERENCES voice_sessions(id)
+                    ON DELETE CASCADE
             )
             """
         )
@@ -342,6 +398,144 @@ def valid_opentodo_signature(
     return fresh and hmac.compare_digest(expected, signature)
 
 
+def create_voice_session(path: Path, temp_dir: Path, mime_type: str) -> VoiceSessionResponse:
+    session_id = uuid.uuid4().hex
+    now = time.time()
+    (temp_dir / session_id).mkdir(parents=True, exist_ok=False)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            INSERT INTO voice_sessions (id, status, mime_type, created_at, updated_at)
+            VALUES (?, 'recording', ?, ?, ?)
+            """,
+            (session_id, mime_type, now, now),
+        )
+    return VoiceSessionResponse(id=session_id, status="recording")
+
+
+def cleanup_voice_sessions(path: Path, temp_dir: Path, max_age_seconds: int = 86400) -> None:
+    cutoff = time.time() - max_age_seconds
+    with sqlite3.connect(path) as connection:
+        rows = connection.execute(
+            "SELECT id FROM voice_sessions WHERE updated_at < ?", (cutoff,)
+        ).fetchall()
+        for (session_id,) in rows:
+            shutil.rmtree(temp_dir / session_id, ignore_errors=True)
+            connection.execute(
+                "DELETE FROM voice_chunks WHERE session_id = ?", (session_id,)
+            )
+        connection.execute("DELETE FROM voice_sessions WHERE updated_at < ?", (cutoff,))
+
+
+def save_voice_chunk(
+    path: Path, temp_dir: Path, session_id: str, sequence: int,
+    body: bytes, max_bytes: int,
+) -> None:
+    if not body or len(body) > 2 * 1024 * 1024:
+        raise ValueError("Voice chunks must be between 1 byte and 2 MiB")
+    with sqlite3.connect(path) as connection:
+        row = connection.execute(
+            "SELECT status, total_bytes FROM voice_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if not row:
+            raise KeyError("Voice session not found")
+        if row[0] != "recording":
+            raise RuntimeError("Voice session is no longer recording")
+        previous = connection.execute(
+            "SELECT size FROM voice_chunks WHERE session_id = ? AND sequence = ?",
+            (session_id, sequence),
+        ).fetchone()
+        new_total = row[1] - (previous[0] if previous else 0) + len(body)
+        if new_total > max_bytes:
+            raise OverflowError("Voice recording is too large")
+        chunk_path = temp_dir / session_id / f"{sequence:06d}.chunk"
+        chunk_path.write_bytes(body)
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO voice_chunks (session_id, sequence, path, size)
+            VALUES (?, ?, ?, ?)
+            """,
+            (session_id, sequence, str(chunk_path), len(body)),
+        )
+        connection.execute(
+            "UPDATE voice_sessions SET total_bytes = ?, updated_at = ? WHERE id = ?",
+            (new_total, time.time(), session_id),
+        )
+
+
+def transcribe_voice_session(
+    path: Path, temp_dir: Path, session_id: str, ffmpeg_bin: str, hex_bin: str,
+) -> str:
+    with sqlite3.connect(path) as connection:
+        session = connection.execute(
+            "SELECT status, mime_type, transcript FROM voice_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if not session:
+            raise KeyError("Voice session not found")
+        if session[0] == "completed" and session[2]:
+            return session[2]
+        if session[0] != "recording":
+            raise RuntimeError("Voice session cannot be finalized")
+        chunks = connection.execute(
+            """
+            SELECT sequence, path FROM voice_chunks
+            WHERE session_id = ? ORDER BY sequence
+            """,
+            (session_id,),
+        ).fetchall()
+        if not chunks or [row[0] for row in chunks] != list(range(len(chunks))):
+            raise ValueError("Voice recording has missing chunks")
+        connection.execute(
+            "UPDATE voice_sessions SET status = 'processing', updated_at = ? WHERE id = ?",
+            (time.time(), session_id),
+        )
+    directory = temp_dir / session_id
+    extension = {
+        "audio/ogg": "ogg", "audio/ogg;codecs=opus": "ogg",
+        "audio/mp4": "mp4", "audio/wav": "wav",
+    }.get(session[1], "webm")
+    joined = directory / f"recording.{extension}"
+    normalized = directory / "recording.wav"
+    try:
+        with joined.open("wb") as output:
+            for _, chunk_path in chunks:
+                output.write(Path(chunk_path).read_bytes())
+        subprocess.run(
+            [ffmpeg_bin, "-nostdin", "-y", "-i", str(joined), "-ar", "16000",
+             "-ac", "1", str(normalized)],
+            check=True, capture_output=True, timeout=120,
+        )
+        result = subprocess.run(
+            [hex_bin, "transcribe", str(normalized)],
+            check=True, capture_output=True, text=True, timeout=300,
+        )
+        transcript = result.stdout.strip()
+        if not transcript:
+            raise ValueError("Hex returned an empty transcript")
+        with sqlite3.connect(path) as connection:
+            connection.execute(
+                """
+                UPDATE voice_sessions SET status = 'completed', transcript = ?,
+                    updated_at = ? WHERE id = ?
+                """,
+                (transcript, time.time(), session_id),
+            )
+            connection.execute("DELETE FROM voice_chunks WHERE session_id = ?", (session_id,))
+        for item in directory.iterdir():
+            item.unlink(missing_ok=True)
+        directory.rmdir()
+        return transcript
+    except Exception as exc:
+        with sqlite3.connect(path) as connection:
+            connection.execute(
+                "UPDATE voice_sessions SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+                (str(exc)[:1000], time.time(), session_id),
+            )
+        raise
+
+
 def create_job(path: Path, body: CommandRequest) -> JobAccepted:
     job_id = uuid.uuid4().hex
     now = datetime.now(UTC).isoformat()
@@ -432,6 +626,9 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
             timeout=settings.request_timeout,
             transport=transport,
         )
+        settings.voice_temp_dir.mkdir(parents=True, exist_ok=True)
+        cleanup_voice_sessions(settings.history_db_path, settings.voice_temp_dir)
+        app.state.transcription_lock = asyncio.Semaphore(1)
         yield
         await app.state.hermes_client.aclose()
 
@@ -555,6 +752,92 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         if not job:
             raise HTTPException(status_code=404, detail="Command not found")
         return job
+
+    @app.post(
+        "/voice/sessions",
+        response_model=VoiceSessionResponse,
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[Depends(authenticate)],
+    )
+    async def start_voice_session(
+        body: VoiceSessionRequest, request: Request,
+    ) -> VoiceSessionResponse:
+        settings: Settings = request.app.state.settings
+        return create_voice_session(
+            settings.history_db_path, settings.voice_temp_dir, body.mime_type
+        )
+
+    @app.put(
+        "/voice/sessions/{session_id}/chunks/{sequence}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        dependencies=[Depends(authenticate)],
+    )
+    async def upload_voice_chunk(
+        session_id: str, sequence: int, request: Request,
+    ) -> None:
+        if sequence < 0 or sequence > 9999:
+            raise HTTPException(status_code=422, detail="Invalid chunk sequence")
+        content_length = int(request.headers.get("Content-Length", "0") or 0)
+        if content_length > 2 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Voice chunk is too large")
+        body = await request.body()
+        settings: Settings = request.app.state.settings
+        try:
+            save_voice_chunk(
+                settings.history_db_path, settings.voice_temp_dir, session_id,
+                sequence, body, settings.voice_max_bytes,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OverflowError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+
+    @app.post(
+        "/voice/sessions/{session_id}/finalize",
+        response_model=VoiceTranscriptionResponse,
+        dependencies=[Depends(authenticate)],
+    )
+    async def finalize_voice_session(
+        session_id: str, request: Request,
+    ) -> VoiceTranscriptionResponse:
+        settings: Settings = request.app.state.settings
+        try:
+            async with request.app.state.transcription_lock:
+                transcript = await asyncio.to_thread(
+                    transcribe_voice_session,
+                    settings.history_db_path, settings.voice_temp_dir, session_id,
+                    settings.ffmpeg_bin, settings.hex_bin,
+                )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except (subprocess.SubprocessError, OSError) as exc:
+            raise HTTPException(status_code=502, detail="Transcription failed") from exc
+        return VoiceTranscriptionResponse(
+            id=session_id, status="completed", transcript=transcript
+        )
+
+    @app.delete(
+        "/voice/sessions/{session_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        dependencies=[Depends(authenticate)],
+    )
+    async def cancel_voice_session(session_id: str, request: Request) -> None:
+        settings: Settings = request.app.state.settings
+        with sqlite3.connect(settings.history_db_path) as connection:
+            row = connection.execute(
+                "SELECT status FROM voice_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Voice session not found")
+            if row[0] == "processing":
+                raise HTTPException(status_code=409, detail="Transcription is processing")
+            connection.execute("DELETE FROM voice_chunks WHERE session_id = ?", (session_id,))
+            connection.execute("DELETE FROM voice_sessions WHERE id = ?", (session_id,))
+        shutil.rmtree(settings.voice_temp_dir / session_id, ignore_errors=True)
 
     @app.get(
         "/settings",

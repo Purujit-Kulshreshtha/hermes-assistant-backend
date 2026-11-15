@@ -7,6 +7,7 @@ import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient, MockTransport, Response
 
+import app.main as main_module
 from app.main import create_app, extract_final_text
 
 
@@ -16,6 +17,7 @@ def environment(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("HERMES_API_KEY", "hermes-test-key")
     monkeypatch.setenv("OPENTODO_WEBHOOK_SECRET", "whsec_test-secret")
     monkeypatch.setenv("HISTORY_DB_PATH", str(tmp_path / "history.db"))
+    monkeypatch.setenv("VOICE_TEMP_DIR", str(tmp_path / "voice"))
 
 
 def test_extract_final_text_ignores_tool_calls() -> None:
@@ -185,6 +187,52 @@ async def test_command_rejects_invalid_key() -> None:
                 json={"text": "List my boards"},
             )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_chunked_voice_session_returns_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(arguments, **kwargs):
+        if arguments[0] == "ffmpeg":
+            from pathlib import Path
+            Path(arguments[-1]).write_bytes(b"RIFF-fake-wave")
+            return main_module.subprocess.CompletedProcess(arguments, 0, b"", b"")
+        return main_module.subprocess.CompletedProcess(
+            arguments, 0, stdout="Create a Home board.\n", stderr=""
+        )
+
+    monkeypatch.setattr(main_module.subprocess, "run", fake_run)
+    app = create_app(MockTransport(lambda request: Response(500)))
+    headers = {"Authorization": "Bearer control-test-key"}
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            started = await client.post(
+                "/voice/sessions", headers=headers,
+                json={"mime_type": "audio/webm;codecs=opus"},
+            )
+            session_id = started.json()["id"]
+            first = await client.put(
+                f"/voice/sessions/{session_id}/chunks/0",
+                headers={**headers, "Content-Type": "application/octet-stream"},
+                content=b"first",
+            )
+            second = await client.put(
+                f"/voice/sessions/{session_id}/chunks/1",
+                headers={**headers, "Content-Type": "application/octet-stream"},
+                content=b"second",
+            )
+            finalized = await client.post(
+                f"/voice/sessions/{session_id}/finalize", headers=headers
+            )
+
+    assert started.status_code == 201
+    assert first.status_code == 204
+    assert second.status_code == 204
+    assert finalized.status_code == 200
+    assert finalized.json()["transcript"] == "Create a Home board."
 
 
 @pytest.mark.asyncio

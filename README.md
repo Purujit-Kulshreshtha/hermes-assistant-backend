@@ -15,6 +15,9 @@ profile. Hermes and OpenTodo remain bound to localhost.
 - `GET/PUT /settings` — shared wake-word, voice and acknowledgement settings.
 - `POST /webhooks/opentodo` — receives signed OpenTodo reminder deliveries.
 - `GET /notifications?after=<cursor>` — lets authenticated clients consume reminders.
+- `POST /voice/sessions` — starts a browser voice-note upload.
+- `PUT /voice/sessions/{id}/chunks/{sequence}` — uploads an ordered audio chunk.
+- `POST /voice/sessions/{id}/finalize` — joins, normalizes and transcribes the note.
 
 ## Local development
 
@@ -56,6 +59,10 @@ pytest -q
 - `HISTORY_DB_PATH`: persistent SQLite database location.
 - `OPENTODO_WEBHOOK_SECRET`: signing secret shown when the OpenTodo webhook
   delivery channel is created.
+- `HEX_BIN`: Linux Hex executable used for transcription.
+- `FFMPEG_BIN`: FFmpeg executable used to normalize browser recordings.
+- `VOICE_TEMP_DIR`: temporary chunk storage; audio is removed after transcription.
+- `VOICE_MAX_BYTES`: maximum bytes in one voice note (50 MiB by default).
 
 Never commit `.env`. The client-facing and Hermes keys must be different.
 
