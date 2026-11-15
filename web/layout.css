@@ -1,0 +1,55 @@
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  min-height: 0;
+}
+
+.shell {
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+}
+
+header {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 auto;
+  background: linear-gradient(180deg, var(--bg) 75%, #151412e8);
+}
+
+main {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+dialog {
+  max-height: calc(100dvh - 28px);
+  overflow: hidden;
+}
+
+.dialog-card {
+  max-height: calc(100dvh - 28px);
+  overflow-y: auto;
+}
+
+.dialog-heading {
+  position: sticky;
+  top: -28px;
+  z-index: 2;
+  padding-top: 28px;
+  padding-bottom: 10px;
+  background: var(--panel);
+}
+
+@media (max-width: 560px) {
+  .dialog-heading {
+    top: -22px;
+    padding-top: 22px;
+  }
+}
