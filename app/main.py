@@ -612,7 +612,7 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
             payload = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise HTTPException(status_code=400, detail="Invalid webhook body") from exc
-        if payload.get("event") == "reminder":
+        if payload.get("event") in {"reminder", "routine"}:
             save_notification(settings.history_db_path, payload)
         return {"accepted": True}
 

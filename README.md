@@ -93,7 +93,7 @@ stop-speaking controls are handled locally instead of being sent to Hermes.
 
 In OpenTodo, open **Settings → Notifications → Delivery channels**, add a
 **Webhook**, and use `https://voice-api.builtforyou.live/webhooks/opentodo`.
-Enable **Reminders** and **Include task titles**. Put the signing secret shown by
+Enable **Reminders**, **Routine notices**, and **Include task titles**. Put the signing secret shown by
 OpenTodo in `OPENTODO_WEBHOOK_SECRET`, restart `hermes-control`, then use the
 channel's **Send test** action. Reminder deliveries are verified, deduplicated,
 shown in Nancy's PWA, and spoken by the Mac companion after a notification sound.

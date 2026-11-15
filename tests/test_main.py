@@ -93,6 +93,46 @@ async def test_opentodo_webhook_rejects_bad_signature() -> None:
 
 
 @pytest.mark.asyncio
+async def test_opentodo_routine_notice_is_queued() -> None:
+    app = create_app(MockTransport(lambda request: Response(500)))
+    payload = {
+        "version": 1,
+        "id": "routine-delivery-1",
+        "event": "routine",
+        "createdAt": 1760000000000,
+        "title": "OpenTodo",
+        "message": "Straighten your back and check your posture.",
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    timestamp = str(int(time.time()))
+    signature = "v1=" + hmac.new(
+        b"whsec_test-secret", timestamp.encode() + b"." + body, hashlib.sha256
+    ).hexdigest()
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            accepted = await client.post(
+                "/webhooks/opentodo",
+                content=body,
+                headers={
+                    "X-OpenTodo-Timestamp": timestamp,
+                    "X-OpenTodo-Signature": signature,
+                    "Content-Type": "application/json",
+                },
+            )
+            notifications = await client.get(
+                "/notifications",
+                headers={"Authorization": "Bearer control-test-key"},
+            )
+
+    assert accepted.status_code == 202
+    item = notifications.json()["items"][0]
+    assert item["event"] == "routine"
+    assert item["message"] == "Straighten your back and check your posture."
+
+
+@pytest.mark.asyncio
 async def test_command_forwards_to_hermes() -> None:
     async def hermes_handler(request: httpx.Request) -> Response:
         assert request.headers["Authorization"] == "Bearer hermes-test-key"
