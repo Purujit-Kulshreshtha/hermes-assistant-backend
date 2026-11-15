@@ -34,6 +34,9 @@ If quiet speech is not detected, lower the threshold before starting:
 export NANCY_SPEECH_THRESHOLD=0.008
 ```
 
+The default end-of-speech pause is 1.4 seconds. Change **Pause before sending**
+in the PWA settings; the companion applies it before the next utterance.
+
 ## Run
 
 The API key must already be stored by `../setup-keychain.sh`.

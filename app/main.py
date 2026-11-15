@@ -84,6 +84,7 @@ class AppSettings(BaseModel):
     wake_word: str = Field(default="Nancy", min_length=1, max_length=40)
     tts_voice: str = Field(default="af_heart", min_length=1, max_length=40)
     tts_speed: float = Field(default=1.0, ge=0.6, le=1.5)
+    end_silence_seconds: float = Field(default=1.4, ge=0.5, le=3.0)
     acknowledgement_phrases: list[str] = Field(
         default_factory=lambda: [
             "Got it.",

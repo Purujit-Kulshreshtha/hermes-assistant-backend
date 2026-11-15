@@ -25,10 +25,16 @@ class UtteranceRecorder:
         self.block_seconds = 0.1
         self.block_size = int(self.sample_rate * self.block_seconds)
         self.threshold = float(os.environ.get("NANCY_SPEECH_THRESHOLD", "0.012"))
-        self.silence_blocks = 8
+        self.silence_blocks = round(
+            float(os.environ.get("NANCY_END_SILENCE_SECONDS", "1.4"))
+            / self.block_seconds
+        )
         self.max_blocks = 120
         self.pre_roll_blocks = 4
         self.device = os.environ.get("NANCY_AUDIO_DEVICE") or None
+
+    def configure_end_silence(self, seconds: float) -> None:
+        self.silence_blocks = max(1, round(seconds / self.block_seconds))
 
     def capture_utterance(self, *, stop_when=None, threshold: float | None = None):
         blocks: queue.Queue = queue.Queue()

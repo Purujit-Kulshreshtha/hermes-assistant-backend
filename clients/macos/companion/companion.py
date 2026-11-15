@@ -150,6 +150,7 @@ def main() -> int:
         while True:
             settings = api.settings()
             wake_word = settings["wake_word"]
+            recorder.configure_end_silence(settings["end_silence_seconds"])
             if speaker:
                 speaker.configure(settings["tts_voice"], settings["tts_speed"])
                 speaker.prepare(
