@@ -9,9 +9,11 @@ import json
 import os
 import random
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -23,6 +25,16 @@ from audio_capture import AudioUnavailable, UtteranceRecorder
 
 HEX = Path("/Applications/Hex.app/Contents/MacOS/hex")
 KEYCHAIN_SERVICE = "hermes-voice-control"
+HOTKEY_TRIGGERED = threading.Event()
+
+
+def emit_state(state: str) -> None:
+    """Publish a machine-readable state for the macOS menu app."""
+    print(f"NANCY_STATE:{state}", flush=True)
+
+
+def handle_hotkey(_signum, _frame) -> None:
+    HOTKEY_TRIGGERED.set()
 
 
 def keychain_key() -> str:
@@ -150,6 +162,7 @@ def main() -> int:
     parser.add_argument("--hex-bin", type=Path, default=HEX)
     parser.add_argument("--print-only", action="store_true", help="Do not synthesize speech")
     args = parser.parse_args()
+    signal.signal(signal.SIGUSR1, handle_hotkey)
     if not args.hex_bin.is_file():
         print(f"Hex not found at {args.hex_bin}", file=sys.stderr)
         return 1
@@ -172,6 +185,7 @@ def main() -> int:
             return 1
 
     print("Nancy companion is running. Press Ctrl+C to stop.")
+    emit_state("idle")
     active = False
     pending_transcript = ""
     try:
@@ -192,7 +206,25 @@ def main() -> int:
             else:
                 label = "Listening for your next instruction…" if active else f"Listening for “{wake_word}”…"
                 print(label, flush=True)
-                audio = recorder.capture_utterance()
+                if active:
+                    emit_state("listening")
+                audio = recorder.capture_utterance(
+                    stop_when=HOTKEY_TRIGGERED.is_set if not active else None
+                )
+                if HOTKEY_TRIGGERED.is_set():
+                    HOTKEY_TRIGGERED.clear()
+                    if not active:
+                        active = True
+                        cue = random.choice(settings["activation_phrases"])
+                        print(f"Nancy: {cue}")
+                        emit_state("speaking")
+                        if speaker:
+                            speaker.speak(cue)
+                        emit_state("listening")
+                        print("Conversation activated by keyboard.")
+                    continue
+                if audio is None:
+                    continue
                 try:
                     transcript = transcribe(args.hex_bin, recorder, audio)
                 except RuntimeError as exc:
@@ -210,8 +242,10 @@ def main() -> int:
                 active = True
                 cue = random.choice(settings["activation_phrases"])
                 print(f"Nancy: {cue}")
+                emit_state("speaking")
                 if speaker:
                     speaker.speak(cue)
+                emit_state("listening")
                 print("Conversation active. Say a stop phrase when you're finished.")
                 continue
 
@@ -221,8 +255,10 @@ def main() -> int:
             ):
                 active = False
                 print("Nancy: Okay. Conversation closed.")
+                emit_state("speaking")
                 if speaker:
                     speaker.speak("Okay.")
+                emit_state("idle")
                 continue
 
             if matches_stop_phrase(transcript, settings["silence_phrases"]):
@@ -237,16 +273,20 @@ def main() -> int:
                 continue
             acknowledgement = random.choice(settings["acknowledgement_phrases"])
             print(f"Nancy: {acknowledgement}")
+            emit_state("speaking")
             if speaker:
                 speaker.speak(acknowledgement)
+            emit_state("processing")
             try:
                 answer = api.wait(job_id)
             except RuntimeError as exc:
                 print(f"Command failed: {exc}", file=sys.stderr)
                 print("Returning to active listening…", file=sys.stderr)
+                emit_state("listening")
                 continue
             print(f"Nancy: {answer}")
             if speaker:
+                emit_state("speaking")
                 player = speaker.start(answer)
                 barge_threshold = float(
                     os.environ.get("NANCY_BARGE_IN_THRESHOLD", "0.035")
@@ -289,6 +329,9 @@ def main() -> int:
                     # Closing and reopening the input stream drops speaker audio
                     # still buffered by macOS after playback finishes.
                     time.sleep(float(os.environ.get("NANCY_ECHO_COOLDOWN", "0.6")))
+                emit_state("listening")
+            else:
+                emit_state("listening")
     except KeyboardInterrupt:
         print("\nStopped.")
         return 0
