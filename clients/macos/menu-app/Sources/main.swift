@@ -128,6 +128,12 @@ final class NancyApp: NSObject, NSApplicationDelegate {
             .appendingPathComponent("Library/Logs/Nancy", isDirectory: true)
     }
 
+    private var hotkeyRequestURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Nancy", isDirectory: true)
+            .appendingPathComponent("hotkey-request")
+    }
+
     private func updateStatus(_ text: String, running: Bool) {
         statusMenuItem.title = text
         statusItem.button?.image = NSImage(
@@ -162,6 +168,16 @@ final class NancyApp: NSObject, NSApplicationDelegate {
         guard let value = sender.representedObject as? String else { return }
         hotkeyChoice = value
         rebuildHotkeyMenu()
+        let directory = hotkeyRequestURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        try? value.write(to: hotkeyRequestURL, atomically: true, encoding: .utf8)
+        if let companion, companion.isRunning {
+            kill(companion.processIdentifier, SIGUSR2)
+        } else {
+            startCompanion()
+        }
     }
 
     private func configureHotkeyMonitor() {
@@ -248,6 +264,13 @@ final class NancyApp: NSObject, NSApplicationDelegate {
             if line.hasPrefix("NANCY_STATE:"),
                let state = NancyState(rawValue: String(line.dropFirst(12))) {
                 applyState(state)
+            } else if line.hasPrefix("NANCY_HOTKEY:") {
+                let value = String(line.dropFirst(13))
+                if ["rightOption", "leftOption", "disabled"].contains(value),
+                   value != hotkeyChoice {
+                    hotkeyChoice = value
+                    rebuildHotkeyMenu()
+                }
             }
         }
     }

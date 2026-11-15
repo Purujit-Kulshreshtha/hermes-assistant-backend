@@ -26,6 +26,10 @@ from audio_capture import AudioUnavailable, UtteranceRecorder
 HEX = Path("/Applications/Hex.app/Contents/MacOS/hex")
 KEYCHAIN_SERVICE = "hermes-voice-control"
 HOTKEY_TRIGGERED = threading.Event()
+CONFIG_TRIGGERED = threading.Event()
+HOTKEY_REQUEST = (
+    Path.home() / "Library/Application Support/Nancy/hotkey-request"
+)
 
 
 def emit_state(state: str) -> None:
@@ -35,6 +39,10 @@ def emit_state(state: str) -> None:
 
 def handle_hotkey(_signum, _frame) -> None:
     HOTKEY_TRIGGERED.set()
+
+
+def handle_config_change(_signum, _frame) -> None:
+    CONFIG_TRIGGERED.set()
 
 
 def keychain_key() -> str:
@@ -68,6 +76,9 @@ class API:
 
     def settings(self) -> dict:
         return self.request("/settings")
+
+    def save_settings(self, value: dict) -> dict:
+        return self.request("/settings", "PUT", value)
 
     def submit(self, text: str, conversation: str) -> str:
         return self.request(
@@ -163,6 +174,7 @@ def main() -> int:
     parser.add_argument("--print-only", action="store_true", help="Do not synthesize speech")
     args = parser.parse_args()
     signal.signal(signal.SIGUSR1, handle_hotkey)
+    signal.signal(signal.SIGUSR2, handle_config_change)
     if not args.hex_bin.is_file():
         print(f"Hex not found at {args.hex_bin}", file=sys.stderr)
         return 1
@@ -191,6 +203,17 @@ def main() -> int:
     try:
         while True:
             settings = api.settings()
+            if HOTKEY_REQUEST.is_file():
+                requested = HOTKEY_REQUEST.read_text().strip()
+                HOTKEY_REQUEST.unlink(missing_ok=True)
+                if requested in {"rightOption", "leftOption", "disabled"}:
+                    settings["keyboard_trigger"] = requested
+                    settings = api.save_settings(settings)
+            CONFIG_TRIGGERED.clear()
+            print(
+                f"NANCY_HOTKEY:{settings.get('keyboard_trigger', 'rightOption')}",
+                flush=True,
+            )
             wake_word = settings["wake_word"]
             recorder.configure_end_silence(settings["end_silence_seconds"])
             if speaker:
@@ -208,9 +231,18 @@ def main() -> int:
                 print(label, flush=True)
                 if active:
                     emit_state("listening")
+                refresh_at = time.monotonic() + 3.0
                 audio = recorder.capture_utterance(
-                    stop_when=HOTKEY_TRIGGERED.is_set if not active else None
+                    stop_when=(
+                        lambda: HOTKEY_TRIGGERED.is_set()
+                        or CONFIG_TRIGGERED.is_set()
+                        or time.monotonic() >= refresh_at
+                    ) if not active else None,
+                    stop_only_when_idle=True,
                 )
+                if CONFIG_TRIGGERED.is_set():
+                    CONFIG_TRIGGERED.clear()
+                    continue
                 if HOTKEY_TRIGGERED.is_set():
                     HOTKEY_TRIGGERED.clear()
                     if not active:

@@ -19,7 +19,8 @@ Open Nancy, Restart Listener, Stop Listener, Open Logs and Quit Nancy.
 Double-tap the Right Option key to activate Nancy without saying the wake word.
 Use **Nancy → Keyboard Trigger** to switch to Left Option or disable it. macOS
 will request Accessibility permission so the trigger works while other apps are
-active.
+active. The same setting is available in the PWA and synchronizes to the Mac
+companion automatically.
 
 The floating orb is cyan while listening, purple while processing, and green
 while Nancy is speaking. It disappears when the conversation closes.

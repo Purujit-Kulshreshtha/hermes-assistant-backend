@@ -154,6 +154,7 @@ async def test_async_command_and_settings() -> None:
                 headers=headers,
                 json={
                     "wake_word": "Computer",
+                    "keyboard_trigger": "leftOption",
                     "tts_voice": "af_bella",
                     "tts_speed": 1.1,
                     "acknowledgement_phrases": ["On it."],
@@ -166,6 +167,7 @@ async def test_async_command_and_settings() -> None:
     assert job.json()["response"] == "Done."
     assert saved.status_code == 200
     assert loaded.json()["wake_word"] == "Computer"
+    assert loaded.json()["keyboard_trigger"] == "leftOption"
 
 
 @pytest.mark.asyncio

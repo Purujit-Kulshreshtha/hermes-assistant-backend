@@ -5,7 +5,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Literal
 
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
@@ -82,6 +82,7 @@ class JobResponse(BaseModel):
 
 class AppSettings(BaseModel):
     wake_word: str = Field(default="Nancy", min_length=1, max_length=40)
+    keyboard_trigger: Literal["rightOption", "leftOption", "disabled"] = "rightOption"
     tts_voice: str = Field(default="af_heart", min_length=1, max_length=40)
     tts_speed: float = Field(default=1.0, ge=0.6, le=1.5)
     end_silence_seconds: float = Field(default=1.4, ge=0.5, le=3.0)

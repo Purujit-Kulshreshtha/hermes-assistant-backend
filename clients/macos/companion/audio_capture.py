@@ -36,7 +36,10 @@ class UtteranceRecorder:
     def configure_end_silence(self, seconds: float) -> None:
         self.silence_blocks = max(1, round(seconds / self.block_seconds))
 
-    def capture_utterance(self, *, stop_when=None, threshold: float | None = None):
+    def capture_utterance(
+        self, *, stop_when=None, threshold: float | None = None,
+        stop_only_when_idle: bool = False,
+    ):
         blocks: queue.Queue = queue.Queue()
         pre_roll = deque(maxlen=self.pre_roll_blocks)
         frames = []
@@ -60,7 +63,7 @@ class UtteranceRecorder:
                 callback=callback,
             ):
                 while True:
-                    if stop_when and stop_when():
+                    if stop_when and stop_when() and (not stop_only_when_idle or not active):
                         return None
                     try:
                         block = blocks.get(timeout=0.1)
