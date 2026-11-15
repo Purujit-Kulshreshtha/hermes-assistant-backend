@@ -1,11 +1,17 @@
 import hmac
 import os
+import sqlite3
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
+
+
+DEFAULT_CONVERSATION = "voice-main"
 
 
 class Settings:
@@ -18,6 +24,9 @@ class Settings:
         )
         self.hermes_model = os.environ.get("HERMES_MODEL", "voice")
         self.request_timeout = float(os.environ.get("REQUEST_TIMEOUT_SECONDS", "120"))
+        self.history_db_path = Path(
+            os.environ.get("HISTORY_DB_PATH", "data/history.db")
+        )
 
         if not self.control_api_key:
             raise RuntimeError("CONTROL_API_KEY is required")
@@ -34,6 +43,19 @@ class CommandResponse(BaseModel):
     text: str
     response_id: str
     conversation: str | None = None
+    created_at: str
+
+
+class HistoryItem(BaseModel):
+    user: str
+    assistant: str
+    response_id: str
+    created_at: str
+
+
+class HistoryResponse(BaseModel):
+    conversation: str
+    items: list[HistoryItem]
 
 
 class HealthResponse(BaseModel):
@@ -53,10 +75,80 @@ def extract_final_text(payload: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def initialize_history(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS interactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation TEXT NOT NULL,
+                user_text TEXT NOT NULL,
+                assistant_text TEXT NOT NULL,
+                response_id TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS interactions_conversation_id
+            ON interactions (conversation, id)
+            """
+        )
+
+
+def save_interaction(
+    path: Path,
+    conversation: str,
+    user_text: str,
+    assistant_text: str,
+    response_id: str,
+    created_at: str,
+) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO interactions
+                (conversation, user_text, assistant_text, response_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (conversation, user_text, assistant_text, response_id, created_at),
+        )
+
+
+def load_history(path: Path, conversation: str, limit: int) -> list[HistoryItem]:
+    with sqlite3.connect(path) as connection:
+        rows = connection.execute(
+            """
+            SELECT user_text, assistant_text, response_id, created_at
+            FROM (
+                SELECT id, user_text, assistant_text, response_id, created_at
+                FROM interactions
+                WHERE conversation = ?
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+            """,
+            (conversation, limit),
+        ).fetchall()
+    return [
+        HistoryItem(
+            user=row[0],
+            assistant=row[1],
+            response_id=row[2],
+            created_at=row[3],
+        )
+        for row in rows
+    ]
+
+
 def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings = Settings()
+        initialize_history(settings.history_db_path)
         app.state.settings = settings
         app.state.hermes_client = httpx.AsyncClient(
             timeout=settings.request_timeout,
@@ -125,10 +217,39 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
                 detail="Hermes request failed",
             ) from exc
 
+        created_at = datetime.now(UTC).isoformat()
+        conversation = body.conversation or "default"
+        save_interaction(
+            settings.history_db_path,
+            conversation,
+            body.text,
+            final_text,
+            payload["id"],
+            created_at,
+        )
         return CommandResponse(
             text=final_text,
             response_id=payload["id"],
             conversation=body.conversation,
+            created_at=created_at,
+        )
+
+    @app.get(
+        "/history",
+        response_model=HistoryResponse,
+        dependencies=[Depends(authenticate)],
+    )
+    async def history(
+        request: Request,
+        conversation: str = DEFAULT_CONVERSATION,
+        limit: int = 100,
+    ) -> HistoryResponse:
+        if not 1 <= limit <= 500:
+            raise HTTPException(status_code=422, detail="limit must be between 1 and 500")
+        settings: Settings = request.app.state.settings
+        return HistoryResponse(
+            conversation=conversation,
+            items=load_history(settings.history_db_path, conversation, limit),
         )
 
     return app

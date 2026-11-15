@@ -8,6 +8,8 @@ profile. Hermes and OpenTodo remain bound to localhost.
 - `GET /health` — process health check.
 - `POST /command` — sends natural-language text to Hermes and returns only the
   assistant's final text.
+- `GET /history?conversation=voice-main` — returns persistent chat history for
+  all clients using that conversation.
 
 ## Local development
 
@@ -46,6 +48,7 @@ pytest -q
 - `HERMES_URL`: defaults to the profile-prefixed local endpoint.
 - `HERMES_MODEL`: defaults to `voice`.
 - `REQUEST_TIMEOUT_SECONDS`: defaults to `120`.
+- `HISTORY_DB_PATH`: persistent SQLite database location.
 
 Never commit `.env`. The client-facing and Hermes keys must be different.
 
@@ -65,3 +68,8 @@ curl http://127.0.0.1:8787/health
 
 Keep port `8787` closed in OCI. A Cloudflare Tunnel will publish this service
 later, while ports `8642` (Hermes) and `8080` (OpenTodo) stay private.
+
+## Clients
+
+The initial push-to-talk client is in `clients/macos`. It uses Hex for local
+speech-to-text and macOS `say` for text-to-speech. See its README for setup.

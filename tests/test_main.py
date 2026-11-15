@@ -6,9 +6,10 @@ from app.main import create_app, extract_final_text
 
 
 @pytest.fixture(autouse=True)
-def environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def environment(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("CONTROL_API_KEY", "control-test-key")
     monkeypatch.setenv("HERMES_API_KEY", "hermes-test-key")
+    monkeypatch.setenv("HISTORY_DB_PATH", str(tmp_path / "history.db"))
 
 
 def test_extract_final_text_ignores_tool_calls() -> None:
@@ -58,11 +59,11 @@ async def test_command_forwards_to_hermes() -> None:
             )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "text": "No boards.",
-        "response_id": "resp_123",
-        "conversation": "voice-main",
-    }
+    payload = response.json()
+    assert payload["text"] == "No boards."
+    assert payload["response_id"] == "resp_123"
+    assert payload["conversation"] == "voice-main"
+    assert payload["created_at"]
 
 
 @pytest.mark.asyncio
@@ -78,3 +79,41 @@ async def test_command_rejects_invalid_key() -> None:
                 json={"text": "List my boards"},
             )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_history_contains_completed_commands() -> None:
+    async def hermes_handler(request: httpx.Request) -> Response:
+        return Response(
+            200,
+            json={
+                "id": "resp_history",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "Created it."}],
+                    }
+                ],
+            },
+        )
+
+    app = create_app(MockTransport(hermes_handler))
+    headers = {"Authorization": "Bearer control-test-key"}
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await client.post(
+                "/command",
+                headers=headers,
+                json={"text": "Create it", "conversation": "voice-main"},
+            )
+            response = await client.get(
+                "/history?conversation=voice-main", headers=headers
+            )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["user"] == "Create it"
+    assert response.json()["items"][0]["assistant"] == "Created it."
