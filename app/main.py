@@ -15,8 +15,18 @@ from typing import Any, AsyncIterator, Literal
 
 import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+from app.board import (
+    BoardDocument,
+    BoardState,
+    clear_board,
+    initialize_board_storage,
+    load_board,
+    save_board,
+)
 
 
 DEFAULT_CONVERSATION = "voice-main"
@@ -277,6 +287,7 @@ def initialize_history(path: Path) -> None:
             ON interactions (conversation, id)
             """
         )
+    initialize_board_storage(path)
 
 
 def save_interaction(
@@ -911,6 +922,74 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="Invalid notification cursor")
         return load_notifications(
             request.app.state.settings.history_db_path, after, limit
+        )
+
+    @app.get(
+        "/board",
+        response_model=BoardState,
+        dependencies=[Depends(authenticate)],
+    )
+    async def get_board(
+        request: Request, conversation: str = DEFAULT_CONVERSATION,
+    ) -> BoardState:
+        value = load_board(request.app.state.settings.history_db_path, conversation)
+        if not value:
+            raise HTTPException(status_code=404, detail="No visual board yet")
+        return value
+
+    @app.put(
+        "/board",
+        response_model=BoardState,
+        dependencies=[Depends(authenticate)],
+    )
+    async def put_board(value: BoardDocument, request: Request) -> BoardState:
+        return save_board(request.app.state.settings.history_db_path, value)
+
+    @app.delete(
+        "/board",
+        response_model=BoardState,
+        dependencies=[Depends(authenticate)],
+    )
+    async def delete_board(
+        request: Request, conversation: str = DEFAULT_CONVERSATION,
+    ) -> BoardState:
+        return clear_board(request.app.state.settings.history_db_path, conversation)
+
+    @app.get(
+        "/board/events",
+        dependencies=[Depends(authenticate)],
+    )
+    async def board_events(
+        request: Request,
+        conversation: str = DEFAULT_CONVERSATION,
+        after: int = 0,
+    ) -> StreamingResponse:
+        if after < 0:
+            raise HTTPException(status_code=422, detail="Invalid board revision")
+
+        async def stream() -> AsyncIterator[str]:
+            revision = after
+            keepalive_at = time.monotonic()
+            while not await request.is_disconnected():
+                value = load_board(
+                    request.app.state.settings.history_db_path, conversation
+                )
+                if value and value.revision > revision:
+                    revision = value.revision
+                    yield f"event: board\ndata: {value.model_dump_json()}\n\n"
+                    keepalive_at = time.monotonic()
+                elif time.monotonic() - keepalive_at >= 15:
+                    yield ": keepalive\n\n"
+                    keepalive_at = time.monotonic()
+                await asyncio.sleep(1)
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     web_dir = Path(__file__).resolve().parent.parent / "web"

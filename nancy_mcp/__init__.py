@@ -1,0 +1,1 @@
+"""Nancy presentation MCP server."""

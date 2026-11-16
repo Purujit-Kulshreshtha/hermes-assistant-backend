@@ -274,6 +274,80 @@ async def test_history_contains_completed_commands() -> None:
 
 
 @pytest.mark.asyncio
+async def test_visual_board_is_validated_versioned_and_persisted() -> None:
+    app = create_app(MockTransport(lambda request: Response(500)))
+    headers = {"Authorization": "Bearer control-test-key"}
+    document = {
+        "conversation": "voice-main",
+        "title": "Today",
+        "layout": "grid",
+        "components": [
+            {
+                "id": "today-heading",
+                "type": "heading",
+                "data": {"text": "Your day", "subtitle": "Three items"},
+            },
+            {
+                "id": "today-tasks",
+                "type": "task_list",
+                "data": {
+                    "title": "Tasks",
+                    "tasks": [{"title": "Review the proposal", "status": "Todo"}],
+                },
+            },
+        ],
+    }
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            first = await client.put("/board", headers=headers, json=document)
+            second = await client.put("/board", headers=headers, json=document)
+            loaded = await client.get(
+                "/board?conversation=voice-main", headers=headers
+            )
+
+    assert first.status_code == 200
+    assert first.json()["revision"] == 1
+    assert second.json()["revision"] == 2
+    assert loaded.json()["title"] == "Today"
+    assert loaded.json()["components"][1]["type"] == "task_list"
+
+
+@pytest.mark.asyncio
+async def test_visual_board_rejects_unknown_components_and_fields() -> None:
+    app = create_app(MockTransport(lambda request: Response(500)))
+    headers = {"Authorization": "Bearer control-test-key"}
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            unknown = await client.put(
+                "/board",
+                headers=headers,
+                json={
+                    "title": "Unsafe",
+                    "components": [{"id": "raw", "type": "html", "data": {}}],
+                },
+            )
+            extra = await client.put(
+                "/board",
+                headers=headers,
+                json={
+                    "title": "Unsafe",
+                    "components": [{
+                        "id": "note",
+                        "type": "callout",
+                        "data": {"text": "Hello", "javascript": "alert(1)"},
+                    }],
+                },
+            )
+
+    assert unknown.status_code == 422
+    assert extra.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_async_command_and_settings() -> None:
     async def hermes_handler(request: httpx.Request) -> Response:
         return Response(
