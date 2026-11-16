@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 class StrictModel(BaseModel):
@@ -122,6 +122,14 @@ class TableData(StrictModel):
     columns: list[ShortText] = Field(min_length=1, max_length=12)
     rows: list[list[str]] = Field(max_length=100)
 
+    @model_validator(mode="after")
+    def rows_match_columns(self) -> "TableData":
+        if any(len(row) != len(self.columns) for row in self.rows):
+            raise ValueError("Every table row must match the column count")
+        if any(len(cell) > 2000 for row in self.rows for cell in row):
+            raise ValueError("Table cells cannot exceed 2000 characters")
+        return self
+
 
 class KeyValueItem(StrictModel):
     label: ShortText
@@ -144,11 +152,24 @@ class ChartData(StrictModel):
     labels: list[ShortText] = Field(min_length=1, max_length=30)
     series: list[ChartSeries] = Field(min_length=1, max_length=6)
 
+    @model_validator(mode="after")
+    def series_match_labels(self) -> "ChartData":
+        if any(len(series.values) != len(self.labels) for series in self.series):
+            raise ValueError("Every chart series must match the label count")
+        return self
+
 
 class ImageData(StrictModel):
     src: HttpUrl
     alt: ShortText
     caption: str | None = Field(default=None, max_length=500)
+
+    @field_validator("src")
+    @classmethod
+    def image_must_use_https(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https":
+            raise ValueError("Board images must use HTTPS")
+        return value
 
 
 class CalloutData(StrictModel):

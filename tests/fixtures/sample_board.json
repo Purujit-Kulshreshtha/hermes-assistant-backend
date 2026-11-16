@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "conversation": "voice-main",
+  "title": "Your day",
+  "layout": "grid",
+  "components": [
+    {
+      "id": "daily-heading",
+      "type": "heading",
+      "data": {
+        "text": "Good morning, Purujit",
+        "subtitle": "Here is what needs your attention today.",
+        "level": 1
+      }
+    },
+    {
+      "id": "daily-stats",
+      "type": "metric_cards",
+      "data": {
+        "items": [
+          {"label": "Tasks", "value": "6", "detail": "2 high priority"},
+          {"label": "Meetings", "value": "3", "detail": "First at 10:30"},
+          {"label": "Unread", "value": "8", "detail": "2 look important"}
+        ]
+      }
+    },
+    {
+      "id": "today-agenda",
+      "type": "calendar_agenda",
+      "data": {
+        "title": "Today’s agenda",
+        "date": "Monday, 16 November",
+        "events": [
+          {"time": "10:30", "title": "Project review", "duration": "45 min", "location": "Google Meet"},
+          {"time": "13:00", "title": "Lunch with Ananya", "duration": "1 hour", "location": "Indiranagar"},
+          {"time": "16:15", "title": "Design sync", "duration": "30 min"}
+        ]
+      }
+    },
+    {
+      "id": "today-tasks",
+      "type": "task_list",
+      "data": {
+        "title": "Tasks for today",
+        "tasks": [
+          {"title": "Review contractor estimates", "project": "Home Improvement", "due": "Today", "status": "Todo"},
+          {"title": "Send the revised proposal", "project": "Personal", "due": "11:00", "status": "In Progress"},
+          {"title": "Book annual health check", "project": "Personal", "status": "Todo"}
+        ]
+      }
+    },
+    {
+      "id": "priority-mail",
+      "type": "email_list",
+      "data": {
+        "title": "Mail worth reading",
+        "messages": [
+          {"sender": "Maya Shah", "subject": "Revised launch timeline", "preview": "I’ve moved the final review to Thursday…", "time": "09:42", "unread": true},
+          {"sender": "Oracle Cloud", "subject": "Monthly usage summary", "preview": "Your Free Tier resources remain within limits.", "time": "08:10", "unread": false}
+        ]
+      }
+    },
+    {
+      "id": "week-focus",
+      "type": "chart",
+      "data": {
+        "title": "Completed this week",
+        "kind": "bar",
+        "labels": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+        "series": [{"name": "Tasks", "values": [3, 5, 2, 7, 4]}]
+      }
+    },
+    {
+      "id": "heads-up",
+      "type": "callout",
+      "data": {
+        "title": "Heads up",
+        "text": "You have a 45-minute gap after lunch—enough time for the contractor calls.",
+        "tone": "info"
+      }
+    }
+  ]
+}

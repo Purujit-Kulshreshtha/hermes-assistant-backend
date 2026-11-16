@@ -18,6 +18,8 @@ profile. Hermes and OpenTodo remain bound to localhost.
 - `POST /voice/sessions` — starts a browser voice-note upload.
 - `PUT /voice/sessions/{id}/chunks/{sequence}` — uploads an ordered audio chunk.
 - `POST /voice/sessions/{id}/finalize` — joins, normalizes and transcribes the note.
+- `GET/PUT/DELETE /board` — reads, presents or clears the current visual board.
+- `GET /board/events` — streams live board updates to authenticated PWA clients.
 
 ## Local development
 
@@ -105,6 +107,12 @@ transcription and local Kokoro TTS, and reads its settings from the PWA.
 Voice sessions begin with the wake word alone, remain active for follow-ups, and
 close on configurable stop phrases. Response playback supports speech barge-in;
 stop-speaking controls are handled locally instead of being sent to Hermes.
+
+The PWA also includes a read-only visual board beside chat. On mobile, Chat and
+Board are horizontal scroll-snap pages: swipe left for the board and right for
+chat. Hermes controls the board through the bundled `nancy_mcp.board_server` and
+the `skills/nancy-visual-board` presentation skill. See
+`docs/visual-board.md` for deployment and configuration.
 
 ### Browser text-to-speech
 
