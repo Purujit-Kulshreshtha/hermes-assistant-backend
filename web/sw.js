@@ -1,4 +1,4 @@
-const CACHE = "nancy-shell-v9";
+const CACHE = "nancy-shell-v10";
 const ASSETS = [
   "/",
   "/styles.css",
@@ -6,7 +6,9 @@ const ASSETS = [
   "/voice.css",
   "/tts.css",
   "/theme.css",
+  "/board.css",
   "/app.js",
+  "/board.js",
   "/voice.js",
   "/tts.js",
   "/tts-worker.js",
@@ -35,7 +37,8 @@ self.addEventListener("fetch", (event) => {
     event.request.method !== "GET" ||
     path.startsWith("/commands") ||
     path.startsWith("/history") ||
-    path.startsWith("/settings")
+    path.startsWith("/settings") ||
+    path.startsWith("/board")
   ) {
     return;
   }

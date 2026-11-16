@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#020807">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; img-src 'self'; style-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co; img-src 'self' https:; style-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'">
   <title>Nancy</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -13,9 +13,11 @@
   <link rel="stylesheet" href="/voice.css">
   <link rel="stylesheet" href="/tts.css">
   <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/board.css">
 </head>
 <body>
-  <div class="shell">
+  <div id="appFrame" class="app-frame">
+  <section id="chatPane" class="shell chat-pane" aria-label="Chat">
     <header>
       <div>
         <div class="eyebrow">PERSONAL ASSISTANT</div>
@@ -51,7 +53,30 @@
       <time id="voiceTimer">0:00</time>
       <button id="cancelVoice" type="button">Cancel</button>
     </div>
+  </section>
+
+  <aside id="boardPane" class="board-pane" aria-label="Nancy's visual board">
+    <header class="board-header">
+      <div>
+        <div class="eyebrow">VISUAL BOARD</div>
+        <h2 id="boardTitle">Canvas</h2>
+      </div>
+      <span id="boardConnection" class="board-connection"><i></i> Waiting</span>
+    </header>
+    <div id="boardCanvas" class="board-canvas layout-grid" aria-live="polite">
+      <div id="boardEmpty" class="board-empty">
+        <div class="board-orb" aria-hidden="true"><span></span></div>
+        <h3>Nancy’s canvas</h3>
+        <p>Ask Nancy to show you something. Tasks, mail, calendars and other information will appear here.</p>
+      </div>
+    </div>
+  </aside>
   </div>
+
+  <nav class="mobile-view-switcher" aria-label="Choose view">
+    <button id="showChat" class="active" type="button">Chat</button>
+    <button id="showBoard" type="button">Board</button>
+  </nav>
 
   <dialog id="authDialog">
     <form id="authForm" method="dialog" class="dialog-card">
@@ -101,6 +126,7 @@
   </dialog>
 
   <script src="/tts.js" defer></script>
+  <script src="/board.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/voice.js" defer></script>
 </body>

@@ -414,3 +414,6 @@ async def test_pwa_is_served() -> None:
     assert 'id="wakeWord"' not in response.text
     assert 'id="keyboardTrigger"' not in response.text
     assert 'id="activityText"' not in response.text
+    assert 'id="boardCanvas"' in response.text
+    assert 'id="showBoard"' in response.text
+    assert '/board.js' in response.text
