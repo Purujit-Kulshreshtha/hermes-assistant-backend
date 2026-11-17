@@ -652,17 +652,26 @@ async def stream_hermes_job(
         except json.JSONDecodeError:
             return
         event_type = event.get("type") or name
+        progress = ""
         if event_type == "message.interim" and event.get("text"):
             progress = str(event["text"]).strip()
-            if progress:
-                with sqlite3.connect(settings.history_db_path) as connection:
-                    connection.execute(
-                        """
-                        UPDATE jobs SET acknowledgement = ?, updated_at = ?
-                        WHERE id = ? AND acknowledgement IS NULL
-                        """,
-                        (progress[:500], datetime.now(UTC).isoformat(), job_id),
-                    )
+        elif event_type in {"response.output_item.added", "response.output_item.done"}:
+            item = event.get("item") or {}
+            if item.get("type") == "message" and item.get("phase") == "commentary":
+                progress = "\n".join(
+                    str(part.get("text", ""))
+                    for part in item.get("content", [])
+                    if part.get("type") == "output_text" and part.get("text")
+                ).strip()
+        if progress:
+            with sqlite3.connect(settings.history_db_path) as connection:
+                connection.execute(
+                    """
+                    UPDATE jobs SET acknowledgement = ?, updated_at = ?
+                    WHERE id = ? AND acknowledgement IS NULL
+                    """,
+                    (progress[:500], datetime.now(UTC).isoformat(), job_id),
+                )
         elif event_type == "response.output_text.done" and event.get("text"):
             final_text = str(event["text"])
         elif event_type == "response.completed":

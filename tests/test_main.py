@@ -418,8 +418,19 @@ async def test_async_command_surfaces_hermes_interim_message() -> None:
         assert "what you are about to do" in body["instructions"]
         events = [
             (
-                "message.interim",
-                {"type": "message.interim", "text": "I'll create the task in Personal."},
+                "response.output_item.added",
+                {
+                    "type": "response.output_item.added",
+                    "item": {
+                        "type": "message",
+                        "phase": "commentary",
+                        "role": "assistant",
+                        "content": [{
+                            "type": "output_text",
+                            "text": "I'll create the task in Personal.",
+                        }],
+                    },
+                },
             ),
             (
                 "response.completed",
