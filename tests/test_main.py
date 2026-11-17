@@ -9,7 +9,6 @@ from httpx import ASGITransport, AsyncClient, MockTransport, Response
 
 import app.main as main_module
 from app.main import (
-    acknowledgement_for,
     concise_action_result,
     create_app,
     extract_final_text,
@@ -40,9 +39,6 @@ def test_extract_final_text_ignores_tool_calls() -> None:
 
 
 def test_two_phase_messages_distinguish_actions_and_queries() -> None:
-    assert acknowledgement_for("Create a task to buy milk") == "I'll set that up."
-    assert acknowledgement_for("Move the task to Done") == "I'll update that."
-    assert acknowledgement_for("What is on my list?") == "I'll check that."
     assert concise_action_result("Create a task", "The task was created") == "Done."
     assert concise_action_result("Show my tasks", "You have three tasks") == "You have three tasks"
     assert concise_action_result("Delete the task", "I couldn't find it") == "I couldn't find it"
@@ -406,12 +402,67 @@ async def test_async_command_and_settings() -> None:
             loaded = await client.get("/settings", headers=headers)
 
     assert accepted.status_code == 202
-    assert accepted.json()["acknowledgement"] == "I'll check that."
+    assert accepted.json()["acknowledgement"] is None
     assert job.json()["status"] == "completed"
     assert job.json()["response"] == "Done."
     assert saved.status_code == 200
     assert loaded.json()["wake_word"] == "Computer"
     assert loaded.json()["keyboard_trigger"] == "leftOption"
+
+
+@pytest.mark.asyncio
+async def test_async_command_surfaces_hermes_interim_message() -> None:
+    async def hermes_handler(request: httpx.Request) -> Response:
+        body = json.loads(request.content)
+        assert body["stream"] is True
+        assert "what you are about to do" in body["instructions"]
+        events = [
+            (
+                "message.interim",
+                {"type": "message.interim", "text": "I'll create the task in Personal."},
+            ),
+            (
+                "response.completed",
+                {
+                    "type": "response.completed",
+                    "response": {
+                        "id": "resp_stream",
+                        "status": "completed",
+                        "output": [{
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [{
+                                "type": "output_text",
+                                "text": "The task was created successfully.",
+                            }],
+                        }],
+                    },
+                },
+            ),
+        ]
+        content = "".join(
+            f"event: {name}\ndata: {json.dumps(data)}\n\n" for name, data in events
+        )
+        return Response(200, text=content, headers={"Content-Type": "text/event-stream"})
+
+    app = create_app(MockTransport(hermes_handler))
+    headers = {"Authorization": "Bearer control-test-key"}
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            accepted = await client.post(
+                "/commands",
+                headers=headers,
+                json={"text": "Create a task to buy milk", "conversation": "voice-main"},
+            )
+            job = await client.get(
+                f"/commands/{accepted.json()['id']}", headers=headers
+            )
+
+    assert accepted.json()["acknowledgement"] is None
+    assert job.json()["acknowledgement"] == "I'll create the task in Personal."
+    assert job.json()["response"] == "Done."
 
 
 @pytest.mark.asyncio

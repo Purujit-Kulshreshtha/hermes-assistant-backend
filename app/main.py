@@ -99,7 +99,7 @@ class HealthResponse(BaseModel):
 class JobAccepted(BaseModel):
     id: str
     status: str = "queued"
-    acknowledgement: str
+    acknowledgement: str | None = None
 
 
 class JobResponse(BaseModel):
@@ -108,6 +108,7 @@ class JobResponse(BaseModel):
     text: str
     conversation: str
     response: str | None = None
+    acknowledgement: str | None = None
     error: str | None = None
     created_at: str
     updated_at: str
@@ -222,17 +223,6 @@ def is_action_request(text: str) -> bool:
     return bool(ACTION_WORDS.search(text))
 
 
-def acknowledgement_for(text: str) -> str:
-    lowered = text.casefold()
-    if not is_action_request(text):
-        return "I'll check that."
-    if any(word in lowered for word in ("create", "add", "schedule", "remind", "set")):
-        return "I'll set that up."
-    if any(word in lowered for word in ("delete", "remove", "archive", "cancel")):
-        return "I'll take care of that."
-    return "I'll update that."
-
-
 def concise_action_result(request: str, answer: str) -> str:
     if not is_action_request(request):
         return answer
@@ -296,6 +286,7 @@ def initialize_history(path: Path) -> None:
                 conversation TEXT NOT NULL,
                 user_text TEXT NOT NULL,
                 assistant_text TEXT,
+                acknowledgement TEXT,
                 response_id TEXT,
                 error TEXT,
                 created_at TEXT NOT NULL,
@@ -303,6 +294,11 @@ def initialize_history(path: Path) -> None:
             )
             """
         )
+        job_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+        }
+        if "acknowledgement" not in job_columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN acknowledgement TEXT")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -609,15 +605,15 @@ def create_job(path: Path, body: CommandRequest) -> JobAccepted:
             """,
             (job_id, body.conversation or DEFAULT_CONVERSATION, body.text, now, now),
         )
-    return JobAccepted(id=job_id, acknowledgement=acknowledgement_for(body.text))
+    return JobAccepted(id=job_id)
 
 
 def load_job(path: Path, job_id: str) -> JobResponse | None:
     with sqlite3.connect(path) as connection:
         row = connection.execute(
             """
-            SELECT id, status, user_text, conversation, assistant_text, error,
-                   created_at, updated_at
+            SELECT id, status, user_text, conversation, assistant_text,
+                   acknowledgement, error, created_at, updated_at
             FROM jobs WHERE id = ?
             """,
             (job_id,),
@@ -626,8 +622,95 @@ def load_job(path: Path, job_id: str) -> JobResponse | None:
         return None
     return JobResponse(
         id=row[0], status=row[1], text=row[2], conversation=row[3],
-        response=row[4], error=row[5], created_at=row[6], updated_at=row[7]
+        response=row[4], acknowledgement=row[5], error=row[6],
+        created_at=row[7], updated_at=row[8]
     )
+
+
+HERMES_PROGRESS_INSTRUCTIONS = """
+Before calling any tool or beginning substantive work, emit one brief user-facing
+commentary sentence stating what you understood and what you are about to do.
+Make it specific to this request, not a generic acknowledgement. Then continue the
+same turn and complete the work. Do not claim success until the work is complete.
+""".strip()
+
+
+async def stream_hermes_job(
+    app: FastAPI, settings: Settings, job: JobResponse, job_id: str,
+) -> dict[str, Any]:
+    completed: dict[str, Any] | None = None
+    final_text: str | None = None
+    event_name = ""
+    data_lines: list[str] = []
+
+    def handle_event(name: str, data: str) -> None:
+        nonlocal completed, final_text
+        if not data or data == "[DONE]":
+            return
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError:
+            return
+        event_type = event.get("type") or name
+        if event_type == "message.interim" and event.get("text"):
+            progress = str(event["text"]).strip()
+            if progress:
+                with sqlite3.connect(settings.history_db_path) as connection:
+                    connection.execute(
+                        """
+                        UPDATE jobs SET acknowledgement = ?, updated_at = ?
+                        WHERE id = ? AND acknowledgement IS NULL
+                        """,
+                        (progress[:500], datetime.now(UTC).isoformat(), job_id),
+                    )
+        elif event_type == "response.output_text.done" and event.get("text"):
+            final_text = str(event["text"])
+        elif event_type == "response.completed":
+            completed = event.get("response") or event
+        elif event_type in {"response.failed", "error"}:
+            detail = event.get("error") or event.get("message") or "Hermes stream failed"
+            raise ValueError(str(detail))
+
+    async with app.state.hermes_client.stream(
+        "POST",
+        settings.hermes_url,
+        headers={"Authorization": f"Bearer {settings.hermes_api_key}"},
+        json={
+            "model": settings.hermes_model,
+            "input": job.text,
+            "conversation": hermes_conversation_id(
+                job.conversation, settings.hermes_session_generation
+            ),
+            "instructions": HERMES_PROGRESS_INSTRUCTIONS,
+            "stream": True,
+        },
+    ) as response:
+        response.raise_for_status()
+        if "text/event-stream" not in response.headers.get("content-type", ""):
+            return json.loads((await response.aread()).decode())
+        async for line in response.aiter_lines():
+            if not line:
+                handle_event(event_name, "\n".join(data_lines))
+                event_name = ""
+                data_lines = []
+            elif line.startswith("event:"):
+                event_name = line.removeprefix("event:").strip()
+            elif line.startswith("data:"):
+                data_lines.append(line.removeprefix("data:").lstrip())
+        handle_event(event_name, "\n".join(data_lines))
+
+    if completed:
+        return completed
+    if final_text:
+        return {
+            "id": f"stream_{job_id}",
+            "status": "completed",
+            "output": [{
+                "type": "message", "role": "assistant",
+                "content": [{"type": "output_text", "text": final_text}],
+            }],
+        }
+    raise ValueError("Hermes stream ended without a completed response")
 
 
 async def process_job(app: FastAPI, job_id: str) -> None:
@@ -642,19 +725,7 @@ async def process_job(app: FastAPI, job_id: str) -> None:
             (now, job_id),
         )
     try:
-        response = await app.state.hermes_client.post(
-            settings.hermes_url,
-            headers={"Authorization": f"Bearer {settings.hermes_api_key}"},
-            json={
-                "model": settings.hermes_model,
-                "input": job.text,
-                "conversation": hermes_conversation_id(
-                    job.conversation, settings.hermes_session_generation
-                ),
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
+        payload = await stream_hermes_job(app, settings, job, job_id)
         if payload.get("status") != "completed":
             raise ValueError(f"Unexpected Hermes status: {payload.get('status')}")
         answer = concise_action_result(job.text, extract_final_text(payload))
