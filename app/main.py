@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 import re
+from urllib.parse import unquote
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +42,15 @@ from app.knowledge import (
     search_knowledge,
     update_knowledge,
 )
+from app.attachments import (
+    Attachment,
+    attach_to_job,
+    cleanup_attachments,
+    delete_job_attachments,
+    hermes_attachment_parts,
+    initialize_attachments,
+    save_attachment,
+)
 
 
 DEFAULT_CONVERSATION = "voice-main"
@@ -71,6 +81,12 @@ class Settings:
         self.voice_max_bytes = int(os.environ.get(
             "VOICE_MAX_BYTES", str(50 * 1024 * 1024)
         ))
+        self.attachment_dir = Path(os.environ.get(
+            "ATTACHMENT_DIR", str(self.history_db_path.parent / "attachments")
+        ))
+        self.attachment_max_bytes = int(os.environ.get(
+            "ATTACHMENT_MAX_BYTES", str(10 * 1024 * 1024)
+        ))
 
         if not self.control_api_key:
             raise RuntimeError("CONTROL_API_KEY is required")
@@ -83,6 +99,7 @@ class Settings:
 class CommandRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     conversation: str | None = Field(default=None, min_length=1, max_length=100)
+    attachment_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 class CommandResponse(BaseModel):
@@ -347,6 +364,7 @@ def initialize_history(path: Path) -> None:
     initialize_board_storage(path)
     initialize_task_cache(path)
     initialize_knowledge(path)
+    initialize_attachments(path)
 
 
 def save_interaction(
@@ -618,6 +636,7 @@ def create_job(path: Path, body: CommandRequest) -> JobAccepted:
             """,
             (job_id, body.conversation or DEFAULT_CONVERSATION, body.text, now, now),
         )
+    attach_to_job(path, job_id, body.attachment_ids)
     return JobAccepted(id=job_id)
 
 
@@ -693,13 +712,21 @@ async def stream_hermes_job(
             detail = event.get("error") or event.get("message") or "Hermes stream failed"
             raise ValueError(str(detail))
 
+    attachment_parts = hermes_attachment_parts(settings.history_db_path, job_id)
+    hermes_input: Any = job.text
+    if attachment_parts:
+        hermes_input = [{
+            "role": "user",
+            "content": [{"type": "input_text", "text": job.text}, *attachment_parts],
+        }]
+
     async with app.state.hermes_client.stream(
         "POST",
         settings.hermes_url,
         headers={"Authorization": f"Bearer {settings.hermes_api_key}"},
         json={
             "model": settings.hermes_model,
-            "input": job.text,
+            "input": hermes_input,
             "conversation": hermes_conversation_id(
                 job.conversation, settings.hermes_session_generation
             ),
@@ -764,12 +791,14 @@ async def process_job(app: FastAPI, job_id: str) -> None:
                 """,
                 (answer, payload["id"], now, job_id),
             )
-    except (httpx.HTTPError, ValueError, KeyError) as exc:
+    except (httpx.HTTPError, ValueError, KeyError, RuntimeError, OSError) as exc:
         with sqlite3.connect(settings.history_db_path) as connection:
             connection.execute(
                 "UPDATE jobs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
                 (str(exc), datetime.now(UTC).isoformat(), job_id),
             )
+    finally:
+        delete_job_attachments(settings.history_db_path, job_id)
 
 
 def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
@@ -783,7 +812,9 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
             transport=transport,
         )
         settings.voice_temp_dir.mkdir(parents=True, exist_ok=True)
+        settings.attachment_dir.mkdir(parents=True, exist_ok=True)
         cleanup_voice_sessions(settings.history_db_path, settings.voice_temp_dir)
+        cleanup_attachments(settings.history_db_path)
         app.state.transcription_lock = asyncio.Semaphore(1)
         yield
         await app.state.hermes_client.aclose()
@@ -820,6 +851,11 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         dependencies=[Depends(authenticate)],
     )
     async def command(body: CommandRequest, request: Request) -> CommandResponse:
+        if body.attachment_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="Attachments are supported through the asynchronous /commands endpoint",
+            )
         settings: Settings = request.app.state.settings
         hermes_body: dict[str, Any] = {
             "model": settings.hermes_model,
@@ -886,6 +922,34 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         )
 
     @app.post(
+        "/attachments",
+        response_model=Attachment,
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[Depends(authenticate)],
+    )
+    async def upload_attachment(
+        request: Request,
+        x_filename: str | None = Header(default=None, alias="X-Filename"),
+    ) -> Attachment:
+        if not x_filename:
+            raise HTTPException(status_code=422, detail="X-Filename is required")
+        settings: Settings = request.app.state.settings
+        content_length = int(request.headers.get("Content-Length", "0") or 0)
+        if content_length > settings.attachment_max_bytes:
+            raise HTTPException(status_code=413, detail="Attachment is too large")
+        content = await request.body()
+        try:
+            return save_attachment(
+                settings.history_db_path, settings.attachment_dir, unquote(x_filename),
+                request.headers.get("Content-Type", "application/octet-stream"),
+                content, settings.attachment_max_bytes,
+            )
+        except OverflowError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=415, detail=str(exc)) from exc
+
+    @app.post(
         "/commands",
         response_model=JobAccepted,
         status_code=status.HTTP_202_ACCEPTED,
@@ -896,7 +960,12 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         request: Request,
         background_tasks: BackgroundTasks,
     ) -> JobAccepted:
-        accepted = create_job(request.app.state.settings.history_db_path, body)
+        try:
+            accepted = create_job(request.app.state.settings.history_db_path, body)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         background_tasks.add_task(process_job, request.app, accepted.id)
         return accepted
 

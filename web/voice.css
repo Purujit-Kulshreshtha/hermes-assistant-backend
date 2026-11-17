@@ -1,5 +1,5 @@
 #composer {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
   gap: 8px;
 }
 
@@ -8,6 +8,7 @@
 }
 
 #sendButton,
+#attachmentButton,
 #voiceButton {
   width: 42px;
   height: 42px;
@@ -23,6 +24,47 @@
   color: #e9ded1;
   touch-action: none;
   user-select: none;
+}
+
+#attachmentButton {
+  background: #0a1b17;
+  color: var(--accent);
+  border: 1px solid rgba(33, 230, 193, .28);
+}
+
+.attachment-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 7px 8px 4px;
+}
+
+.attachment-tray[hidden] { display: none; }
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 240px;
+  padding: 6px 9px;
+  border: 1px solid rgba(33, 230, 193, .25);
+  border-radius: 10px;
+  background: #071713;
+  color: var(--muted);
+  font-size: .74rem;
+}
+
+.attachment-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip button {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
 }
 
 #voiceButton.recording {

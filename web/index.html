@@ -41,9 +41,13 @@
       <span class="loader" aria-label="Nancy is working"></span>
     </div>
 
+    <div id="attachmentTray" class="attachment-tray" hidden></div>
     <form id="composer">
       <textarea id="messageInput" rows="1" maxlength="4000"
         placeholder="Message Nancy…" aria-label="Message"></textarea>
+      <input id="attachmentInput" type="file" hidden multiple
+        accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml">
+      <button id="attachmentButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
       <button id="voiceButton" type="button" aria-label="Hold to record a voice note" title="Hold to record">●</button>
       <button id="sendButton" type="submit" aria-label="Send">↑</button>
     </form>

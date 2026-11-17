@@ -21,6 +21,8 @@ profile. Hermes and OpenTodo remain bound to localhost.
 - `POST /voice/sessions` — starts a browser voice-note upload.
 - `PUT /voice/sessions/{id}/chunks/{sequence}` — uploads an ordered audio chunk.
 - `POST /voice/sessions/{id}/finalize` — joins, normalizes and transcribes the note.
+- `POST /attachments` — uploads a message attachment using `X-Filename`; up to
+  five returned attachment IDs can be supplied to `POST /commands`.
 - `GET/PUT/DELETE /board` — reads, presents or clears the current visual board.
 - `GET /board/events` — streams live board updates to authenticated PWA clients.
 
@@ -72,6 +74,8 @@ pytest -q
 - `FFMPEG_BIN`: FFmpeg executable used to normalize browser recordings.
 - `VOICE_TEMP_DIR`: temporary chunk storage; audio is removed after transcription.
 - `VOICE_MAX_BYTES`: maximum bytes in one voice note (50 MiB by default).
+- `ATTACHMENT_DIR`: temporary attachment storage.
+- `ATTACHMENT_MAX_BYTES`: maximum size per file (10 MiB by default).
 
 Never commit `.env`. The client-facing and Hermes keys must be different.
 
@@ -127,6 +131,11 @@ Nancy's personal knowledge base is local to the same SQLite database. The
 `nancy-personal-knowledge` skill saves information only after an explicit request
 to remember it, supports full-text recall and can present results with the
 read-only `knowledge_list` and `knowledge_detail` board components.
+
+The composer accepts drag-and-drop or button-selected attachments. Images are
+sent to Hermes as inline vision input; PDF, text, Markdown, CSV, JSON and XML
+files are extracted locally and supplied as bounded text. Temporary uploads are
+deleted after the job completes or fails.
 
 ### Browser text-to-speech
 

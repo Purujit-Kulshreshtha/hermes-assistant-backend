@@ -498,6 +498,7 @@ async def test_pwa_is_served() -> None:
     assert response.status_code == 200
     assert "Nancy" in response.text
     assert 'id="voiceButton"' in response.text
+    assert 'id="attachmentButton"' in response.text
     assert 'id="testVoice"' in response.text
     assert '/tts.js' in response.text
     assert 'id="wakeWord"' not in response.text
@@ -540,3 +541,48 @@ async def test_knowledge_api_create_search_update_and_archive() -> None:
     assert updated.json()["kind"] == "idea"
     assert archived.json()["archived"] is True
     assert after.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_attachment_is_included_in_async_hermes_request() -> None:
+    async def hermes_handler(request: httpx.Request) -> Response:
+        body = json.loads(request.content)
+        content = body["input"][0]["content"]
+        assert content[0]["text"] == "Summarize this"
+        assert "Attached file: notes.txt" in content[1]["text"]
+        assert "Important decision" in content[1]["text"]
+        return Response(
+            200,
+            json={
+                "id": "resp_attachment", "status": "completed",
+                "output": [{
+                    "type": "message", "role": "assistant",
+                    "content": [{"type": "output_text", "text": "Summary."}],
+                }],
+            },
+        )
+
+    app = create_app(MockTransport(hermes_handler))
+    headers = {"Authorization": "Bearer control-test-key"}
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            uploaded = await client.post(
+                "/attachments",
+                headers={
+                    **headers, "X-Filename": "notes.txt", "Content-Type": "text/plain",
+                },
+                content=b"Important decision",
+            )
+            accepted = await client.post(
+                "/commands", headers=headers,
+                json={
+                    "text": "Summarize this", "conversation": "voice-main",
+                    "attachment_ids": [uploaded.json()["id"]],
+                },
+            )
+            job = await client.get(f"/commands/{accepted.json()['id']}", headers=headers)
+
+    assert uploaded.status_code == 201
+    assert job.json()["response"] == "Summary."
