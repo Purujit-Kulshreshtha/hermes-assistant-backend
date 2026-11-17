@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import json
 import time
+import wave
+from io import BytesIO
 
 import httpx
 import pytest
@@ -42,6 +44,51 @@ def test_two_phase_messages_distinguish_actions_and_queries() -> None:
     assert concise_action_result("Create a task", "The task was created") == "Done."
     assert concise_action_result("Show my tasks", "You have three tasks") == "You have three tasks"
     assert concise_action_result("Delete the task", "I couldn't find it") == "I couldn't find it"
+
+
+@pytest.mark.asyncio
+async def test_tts_stream_is_authenticated_and_length_framed() -> None:
+    class FakeTTS:
+        @staticmethod
+        def sentences(text: str) -> list[str]:
+            return ["First.", "Second."]
+
+        async def render(self, text: str, voice: str, speed: float) -> bytes:
+            assert voice == "af_heart"
+            assert speed == 1.1
+            output = BytesIO()
+            with wave.open(output, "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(24_000)
+                wav.writeframes(b"\0\0" * (1 if text == "First." else 2))
+            return output.getvalue()
+
+    app = create_app(MockTransport(lambda request: Response(500)))
+    async with app.router.lifespan_context(app):
+        app.state.tts = FakeTTS()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            denied = await client.post("/tts/stream", json={"text": "Hello."})
+            response = await client.post(
+                "/tts/stream",
+                headers={"Authorization": "Bearer control-test-key"},
+                json={"text": "First. Second.", "voice": "af_heart", "speed": 1.1},
+            )
+
+    assert denied.status_code == 401
+    assert response.status_code == 200
+    assert response.headers["x-nancy-audio-framing"] == "uint32be-wav"
+    payload = response.content
+    first_size = int.from_bytes(payload[:4], "big")
+    first = payload[4:4 + first_size]
+    second_offset = 4 + first_size
+    second_size = int.from_bytes(payload[second_offset:second_offset + 4], "big")
+    second = payload[second_offset + 4:second_offset + 4 + second_size]
+    assert first.startswith(b"RIFF")
+    assert second.startswith(b"RIFF")
+    assert second_size > first_size
 
 
 @pytest.mark.asyncio
@@ -500,6 +547,7 @@ async def test_pwa_is_served() -> None:
     assert 'id="voiceButton"' in response.text
     assert 'id="attachmentButton"' in response.text
     assert 'id="testVoice"' in response.text
+    assert 'id="stopSpeechButton"' in response.text
     assert '/tts.js' in response.text
     assert 'id="wakeWord"' not in response.text
     assert 'id="keyboardTrigger"' not in response.text

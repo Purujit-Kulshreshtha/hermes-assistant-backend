@@ -25,6 +25,8 @@
       </div>
       <div class="header-actions">
         <span id="connection" class="status"><i></i> Connecting</span>
+        <button id="stopSpeechButton" class="stop-speech" type="button" hidden
+          aria-label="Stop Nancy speaking" title="Stop speaking">■ Stop</button>
         <button id="settingsButton" class="icon-button" aria-label="Settings">⚙</button>
       </div>
     </header>
@@ -96,7 +98,7 @@
   <dialog id="settingsDialog">
     <form id="settingsForm" method="dialog" class="dialog-card settings-card">
       <div class="dialog-heading">
-        <div><div class="eyebrow">VOICE SETTINGS</div><h2>Browser speech</h2></div>
+        <div><div class="eyebrow">VOICE SETTINGS</div><h2>Oracle speech</h2></div>
         <button type="button" id="closeSettings" class="icon-button">×</button>
       </div>
       <div class="two-column">
@@ -113,12 +115,12 @@
         <label>Speed<input id="ttsSpeed" type="number" min="0.6" max="1.5" step="0.05"></label>
       </div>
       <label class="switch-row">
-        <span><strong>Browser speech</strong><small>Kokoro neural voice; first use downloads the model</small></span>
+        <span><strong>Spoken responses</strong><small>Kokoro runs on Oracle and streams audio here</small></span>
         <input id="browserSpeech" type="checkbox">
       </label>
       <div class="tts-actions">
         <button type="button" id="testVoice">Test voice</button>
-        <small id="ttsStatus">Voice model loads when first used.</small>
+        <small id="ttsStatus">Oracle voice loads when first used.</small>
       </div>
       <label class="switch-row">
         <span><strong>Reminder notifications</strong><small>Show OpenTodo reminders in this browser</small></span>

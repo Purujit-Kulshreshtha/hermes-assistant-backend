@@ -137,17 +137,18 @@ sent to Hermes as inline vision input; PDF, text, Markdown, CSV, JSON and XML
 files are extracted locally and supplied as bounded text. Temporary uploads are
 deleted after the job completes or fails.
 
-### Browser text-to-speech
+### Streaming text-to-speech
 
-The PWA runs Kokoro-82M in a Web Worker and caches the downloaded model in the
-browser. It uses WebGPU with WASM fallback, speaks replies sentence by sentence,
-and stops playback as soon as voice recording begins. Enable **Browser speech**
-in Settings and use **Test voice** to download the model and verify playback.
-The Kokoro JavaScript runtime is pinned and served from `web/vendor`; its
-Apache-2.0 license is included beside it. The first load requires access to
-jsDelivr for ONNX runtime files and Hugging Face for model weights; later use
-comes from the browser cache. If neural TTS cannot load, Nancy falls back to
-the device's system speech engine and shows the failure detail in Settings.
+Kokoro runs on Oracle and generates replies one sentence at a time.
+`POST /tts/stream` returns length-prefixed WAV frames, allowing the PWA to begin
+playback while later sentences are still being synthesized. Generated sentences
+are cached under `TTS_CACHE_DIR` (beside the history database by default). The
+header **Stop** control aborts the HTTP stream and immediately stops playback;
+starting a voice note does the same. If server speech is unavailable, the PWA
+falls back to the device's system voice.
+
+The first synthesis downloads Kokoro's model. Install `espeak-ng` and the Python
+requirements on Oracle, then restart `hermes-control`.
 
 ## OpenTodo reminder delivery
 

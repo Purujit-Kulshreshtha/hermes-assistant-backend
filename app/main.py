@@ -51,6 +51,7 @@ from app.attachments import (
     initialize_attachments,
     save_attachment,
 )
+from app.tts import KokoroStreamEngine, TTSUnavailable
 
 
 DEFAULT_CONVERSATION = "voice-main"
@@ -86,6 +87,9 @@ class Settings:
         ))
         self.attachment_max_bytes = int(os.environ.get(
             "ATTACHMENT_MAX_BYTES", str(10 * 1024 * 1024)
+        ))
+        self.tts_cache_dir = Path(os.environ.get(
+            "TTS_CACHE_DIR", str(self.history_db_path.parent / "tts-cache")
         ))
 
         if not self.control_api_key:
@@ -175,6 +179,12 @@ class VoiceTranscriptionResponse(BaseModel):
     id: str
     status: str
     transcript: str
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=6000)
+    voice: str = Field(default="af_heart", pattern=r"^[a-z]{2}_[a-z]+$")
+    speed: float = Field(default=1.0, ge=0.6, le=1.5)
 
 
 class AppSettings(BaseModel):
@@ -816,6 +826,7 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         cleanup_voice_sessions(settings.history_db_path, settings.voice_temp_dir)
         cleanup_attachments(settings.history_db_path)
         app.state.transcription_lock = asyncio.Semaphore(1)
+        app.state.tts = KokoroStreamEngine(settings.tts_cache_dir)
         yield
         await app.state.hermes_client.aclose()
 
@@ -844,6 +855,42 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         return HealthResponse()
+
+    @app.post(
+        "/tts/stream",
+        dependencies=[Depends(authenticate)],
+    )
+    async def tts_stream(body: TTSRequest, request: Request) -> StreamingResponse:
+        sentences = request.app.state.tts.sentences(body.text)
+        if not sentences:
+            raise HTTPException(status_code=422, detail="No speakable text")
+        try:
+            # Render once before committing the response so setup failures remain useful JSON.
+            first = await request.app.state.tts.render(
+                sentences[0], body.voice, body.speed
+            )
+        except (TTSUnavailable, RuntimeError, OSError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        async def audio_frames() -> AsyncIterator[bytes]:
+            yield len(first).to_bytes(4, "big") + first
+            for sentence in sentences[1:]:
+                if await request.is_disconnected():
+                    return
+                frame = await request.app.state.tts.render(
+                    sentence, body.voice, body.speed
+                )
+                yield len(frame).to_bytes(4, "big") + frame
+
+        return StreamingResponse(
+            audio_frames(),
+            media_type="application/octet-stream",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+                "X-Nancy-Audio-Framing": "uint32be-wav",
+            },
+        )
 
     @app.post(
         "/command",

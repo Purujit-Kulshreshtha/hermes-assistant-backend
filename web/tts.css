@@ -17,3 +17,14 @@
   color: var(--muted);
   line-height: 1.35;
 }
+
+.stop-speech {
+  border: 1px solid rgba(255, 96, 117, .5);
+  border-radius: 10px;
+  background: rgba(50, 10, 17, .9);
+  color: #ff9cab;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.stop-speech[hidden] { display: none; }
