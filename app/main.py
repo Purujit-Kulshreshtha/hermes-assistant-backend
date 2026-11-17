@@ -27,6 +27,7 @@ from app.board import (
     load_board,
     save_board,
 )
+from app.task_cache import initialize_task_cache
 
 
 DEFAULT_CONVERSATION = "voice-main"
@@ -288,6 +289,7 @@ def initialize_history(path: Path) -> None:
             """
         )
     initialize_board_storage(path)
+    initialize_task_cache(path)
 
 
 def save_interaction(

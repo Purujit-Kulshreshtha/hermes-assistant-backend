@@ -59,6 +59,8 @@ pytest -q
 - `HERMES_MODEL`: defaults to `voice`.
 - `REQUEST_TIMEOUT_SECONDS`: defaults to `120`.
 - `HISTORY_DB_PATH`: persistent SQLite database location.
+- `TASK_CACHE_TTL_SECONDS`: freshness window for cached active/today task
+  snapshots (defaults to `300`).
 - `OPENTODO_WEBHOOK_SECRET`: signing secret shown when the OpenTodo webhook
   delivery channel is created.
 - `HEX_BIN`: Linux Hex executable used for transcription.
@@ -111,7 +113,9 @@ stop-speaking controls are handled locally instead of being sent to Hermes.
 The PWA also includes a read-only visual board beside chat. On mobile, Chat and
 Board are horizontal scroll-snap pages: swipe left for the board and right for
 chat. Hermes controls the board through the bundled `nancy_mcp.board_server` and
-the `skills/nancy-visual-board` presentation skill. See
+the `skills/nancy-visual-board` presentation skill. The same MCP process keeps
+active and today OpenTodo task snapshots in memory, with behavior defined by
+`skills/nancy-opentodo-cache`. See
 `docs/visual-board.md` for deployment and configuration.
 
 ### Browser text-to-speech

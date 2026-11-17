@@ -17,6 +17,7 @@ mcp_servers:
     env:
       PYTHONPATH: "/opt/hermes-control"
       HISTORY_DB_PATH: "/var/lib/hermes-control/history.db"
+      TASK_CACHE_TTL_SECONDS: "300"
     timeout: 120
     connect_timeout: 60
 
@@ -32,8 +33,25 @@ tools as:
 - `mcp_nancy_board_update_component`
 - `mcp_nancy_board_remove_component`
 - `mcp_nancy_board_clear_board`
+- `mcp_nancy_board_get_cached_tasks`
+- `mcp_nancy_board_replace_task_cache`
+- `mcp_nancy_board_update_cached_task`
+- `mcp_nancy_board_remove_cached_task`
+- `mcp_nancy_board_invalidate_task_cache`
+- `mcp_nancy_board_task_cache_status`
 
 The MCP server uses stdio. Its stdout is reserved for MCP protocol traffic.
+
+## OpenTodo task cache
+
+The MCP process keeps the common `active` and `today` views in memory and also
+persists them in SQLite, so a Hermes restart does not make the cache cold. The
+bundled `nancy-opentodo-cache` skill makes Hermes read the cache first, refresh
+both views only when cold or stale, write through successful task changes, and
+invalidate uncertain results. OpenTodo remains the source of truth.
+
+A fresh empty snapshot is a valid cached result; Nancy will not repeatedly query
+OpenTodo merely because no tasks are due.
 
 ## HTTP API
 

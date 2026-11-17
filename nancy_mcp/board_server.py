@@ -14,10 +14,12 @@ from app.board import (
     update_board_component as update_saved_component,
 )
 from pydantic import TypeAdapter
+from app.task_cache import TaskCache
 
 
 mcp = FastMCP("Nancy Visual Board")
 component_adapter = TypeAdapter(BoardComponent)
+task_cache: TaskCache | None = None
 
 
 def database_path() -> Path:
@@ -28,6 +30,14 @@ def prepare_database() -> Path:
     path = database_path()
     initialize_board_storage(path)
     return path
+
+
+def cached_tasks() -> TaskCache:
+    global task_cache
+    if task_cache is None:
+        ttl = int(os.environ.get("TASK_CACHE_TTL_SECONDS", "300"))
+        task_cache = TaskCache(database_path(), ttl)
+    return task_cache
 
 
 @mcp.tool()
@@ -74,6 +84,46 @@ def clear_board(conversation: str = "voice-main") -> dict[str, Any]:
     return clear_saved_board(
         prepare_database(), conversation
     ).model_dump(mode="json")
+
+
+@mcp.tool()
+def get_cached_tasks(view: Literal["active", "today"]) -> dict[str, Any]:
+    """Return OpenTodo tasks from Nancy's local memory cache without a network call."""
+    return cached_tasks().get(view)
+
+
+@mcp.tool()
+def replace_task_cache(
+    active_tasks: list[dict[str, Any]], today_tasks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Replace both task views after fetching authoritative data from OpenTodo."""
+    return cached_tasks().replace(active_tasks, today_tasks)
+
+
+@mcp.tool()
+def update_cached_task(
+    task: dict[str, Any], active: bool, today: bool,
+) -> dict[str, Any]:
+    """Write through one created or updated OpenTodo task into both cached views."""
+    return cached_tasks().upsert(task, active, today)
+
+
+@mcp.tool()
+def remove_cached_task(task_id: str) -> dict[str, Any]:
+    """Remove a deleted OpenTodo task from every cached view."""
+    return cached_tasks().remove(task_id)
+
+
+@mcp.tool()
+def invalidate_task_cache() -> dict[str, Any]:
+    """Mark task snapshots stale when a mutation result lacks enough data to patch them."""
+    return cached_tasks().invalidate()
+
+
+@mcp.tool()
+def task_cache_status() -> dict[str, Any]:
+    """Report task-cache counts, freshness, age and revisions without returning tasks."""
+    return cached_tasks().status()
 
 
 if __name__ == "__main__":
