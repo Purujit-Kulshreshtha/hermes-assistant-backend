@@ -306,6 +306,16 @@ async def test_visual_board_is_validated_versioned_and_persisted() -> None:
                     "tasks": [{"title": "Review the proposal", "status": "Todo"}],
                 },
             },
+            {
+                "id": "saved-note",
+                "type": "knowledge_detail",
+                "data": {
+                    "title": "Kitchen decision",
+                    "content": "Keep the sink on the east wall.",
+                    "kind": "note",
+                    "tags": ["home"],
+                },
+            },
         ],
     }
     async with app.router.lifespan_context(app):
@@ -323,6 +333,7 @@ async def test_visual_board_is_validated_versioned_and_persisted() -> None:
     assert second.json()["revision"] == 2
     assert loaded.json()["title"] == "Today"
     assert loaded.json()["components"][1]["type"] == "task_list"
+    assert loaded.json()["components"][2]["type"] == "knowledge_detail"
 
 
 @pytest.mark.asyncio
@@ -495,3 +506,37 @@ async def test_pwa_is_served() -> None:
     assert 'id="boardCanvas"' in response.text
     assert 'id="showBoard"' in response.text
     assert '/board.js' in response.text
+
+
+@pytest.mark.asyncio
+async def test_knowledge_api_create_search_update_and_archive() -> None:
+    app = create_app(MockTransport(lambda request: Response(500)))
+    headers = {"Authorization": "Bearer control-test-key"}
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            created = await client.post(
+                "/knowledge", headers=headers,
+                json={
+                    "kind": "voice_note", "title": "Product thought",
+                    "content": "Use a calm notification sound.", "tags": ["nancy"],
+                },
+            )
+            entry_id = created.json()["id"]
+            found = await client.get("/knowledge?q=notification", headers=headers)
+            updated = await client.put(
+                f"/knowledge/{entry_id}", headers=headers,
+                json={
+                    "kind": "idea", "title": "Notification design",
+                    "content": "Use a subtle notification sound.", "tags": ["nancy"],
+                },
+            )
+            archived = await client.delete(f"/knowledge/{entry_id}", headers=headers)
+            after = await client.get("/knowledge?q=notification", headers=headers)
+
+    assert created.status_code == 201
+    assert found.json()["items"][0]["id"] == entry_id
+    assert updated.json()["kind"] == "idea"
+    assert archived.json()["archived"] is True
+    assert after.json()["items"] == []

@@ -62,6 +62,28 @@ class TaskListData(StrictModel):
     tasks: list[TaskItem] = Field(max_length=50)
 
 
+class KnowledgeItem(StrictModel):
+    title: ShortText
+    excerpt: str | None = Field(default=None, max_length=600)
+    kind: Literal["note", "idea", "bookmark", "meeting", "voice_note"] = "note"
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    updated: str | None = Field(default=None, max_length=120)
+
+
+class KnowledgeListData(StrictModel):
+    title: str | None = Field(default=None, max_length=200)
+    items: list[KnowledgeItem] = Field(max_length=50)
+
+
+class KnowledgeDetailData(StrictModel):
+    title: ShortText
+    content: LongText
+    kind: Literal["note", "idea", "bookmark", "meeting", "voice_note"] = "note"
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    source_url: HttpUrl | None = None
+    updated: str | None = Field(default=None, max_length=120)
+
+
 class EmailItem(StrictModel):
     sender: ShortText
     subject: ShortText
@@ -217,6 +239,18 @@ class TaskListComponent(StrictModel):
     data: TaskListData
 
 
+class KnowledgeListComponent(StrictModel):
+    id: ComponentId
+    type: Literal["knowledge_list"]
+    data: KnowledgeListData
+
+
+class KnowledgeDetailComponent(StrictModel):
+    id: ComponentId
+    type: Literal["knowledge_detail"]
+    data: KnowledgeDetailData
+
+
 class EmailListComponent(StrictModel):
     id: ComponentId
     type: Literal["email_list"]
@@ -296,6 +330,8 @@ BoardComponent = Annotated[
         MetricCardsComponent,
         ListComponent,
         TaskListComponent,
+        KnowledgeListComponent,
+        KnowledgeDetailComponent,
         EmailListComponent,
         EmailDetailComponent,
         CalendarAgendaComponent,

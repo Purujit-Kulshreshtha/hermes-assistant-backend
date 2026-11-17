@@ -15,6 +15,9 @@ profile. Hermes and OpenTodo remain bound to localhost.
 - `GET/PUT /settings` — shared wake-word, voice and acknowledgement settings.
 - `POST /webhooks/opentodo` — receives signed OpenTodo reminder deliveries.
 - `GET /notifications?after=<cursor>` — lets authenticated clients consume reminders.
+- `POST/GET /knowledge` — saves or searches private notes, ideas, bookmarks,
+  meetings and voice notes using local SQLite full-text search.
+- `GET/PUT/DELETE /knowledge/{id}` — reads, replaces or archives one entry.
 - `POST /voice/sessions` — starts a browser voice-note upload.
 - `PUT /voice/sessions/{id}/chunks/{sequence}` — uploads an ordered audio chunk.
 - `POST /voice/sessions/{id}/finalize` — joins, normalizes and transcribes the note.
@@ -119,6 +122,11 @@ the `skills/nancy-visual-board` presentation skill. The same MCP process keeps
 active and today OpenTodo task snapshots in memory, with behavior defined by
 `skills/nancy-opentodo-cache`. See
 `docs/visual-board.md` for deployment and configuration.
+
+Nancy's personal knowledge base is local to the same SQLite database. The
+`nancy-personal-knowledge` skill saves information only after an explicit request
+to remember it, supports full-text recall and can present results with the
+read-only `knowledge_list` and `knowledge_detail` board components.
 
 ### Browser text-to-speech
 

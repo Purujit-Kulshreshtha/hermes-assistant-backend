@@ -29,6 +29,7 @@ change source data from the board.
 - Start with `heading` when the board needs context.
 - Use `metric_cards` only for genuinely useful summary numbers.
 - Use domain components (`task_list`, `email_list`, `calendar_agenda`) instead of a generic table.
+- Use `knowledge_list` and `knowledge_detail` for saved notes, ideas, bookmarks and meetings.
 - Use `callout` for the single most important caveat or insight.
 - Use `chart` only when values can be compared meaningfully.
 - Keep spoken output short when the details are already visible on the board.

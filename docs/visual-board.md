@@ -39,6 +39,11 @@ tools as:
 - `mcp_nancy_board_remove_cached_task`
 - `mcp_nancy_board_invalidate_task_cache`
 - `mcp_nancy_board_task_cache_status`
+- `mcp_nancy_board_save_knowledge`
+- `mcp_nancy_board_search_knowledge_base`
+- `mcp_nancy_board_get_knowledge_entry`
+- `mcp_nancy_board_update_knowledge_entry`
+- `mcp_nancy_board_archive_knowledge_entry`
 
 The MCP server uses stdio. Its stdout is reserved for MCP protocol traffic.
 
@@ -52,6 +57,14 @@ invalidate uncertain results. OpenTodo remains the source of truth.
 
 A fresh empty snapshot is a valid cached result; Nancy will not repeatedly query
 OpenTodo merely because no tasks are due.
+
+## Personal knowledge
+
+Private notes, ideas, bookmarks, meeting notes and voice-note transcripts are
+stored in the same SQLite database and indexed with FTS5. The
+`nancy-personal-knowledge` skill enforces explicit capture: normal conversation is
+not saved unless the user asks Nancy to remember or note it. Search results can be
+shown with `knowledge_list`; full entries use `knowledge_detail`.
 
 ## HTTP API
 

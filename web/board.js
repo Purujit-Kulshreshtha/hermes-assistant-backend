@@ -91,6 +91,29 @@
     return node;
   }
 
+  function renderKnowledgeList(component) {
+    const node = componentShell(component);
+    addTitle(node, component.data.title || 'Knowledge');
+    const items = component.data.items.map(item => ({
+      title: item.title,
+      subtitle: [item.excerpt, item.updated].filter(Boolean).join(' · '),
+      badge: item.kind.replace('_', ' '),
+    }));
+    renderListItems(node, items);
+    return node;
+  }
+
+  function renderKnowledgeDetail(component) {
+    const data = component.data;
+    const node = componentShell(component, 'wide');
+    node.append(element('h3', 'component-title', data.title));
+    const meta = [data.kind.replace('_', ' '), ...data.tags, data.updated].filter(Boolean);
+    if (meta.length) node.append(element('div', 'item-subtitle', meta.join(' · ')));
+    node.append(element('p', 'rich-text-body', data.content));
+    if (data.source_url) node.append(element('div', 'item-subtitle', `Source: ${data.source_url}`));
+    return node;
+  }
+
   function renderEmailList(component) {
     const node = componentShell(component);
     addTitle(node, component.data.title || 'Mail');
@@ -319,6 +342,8 @@
     metric_cards: renderMetricCards,
     list: renderList,
     task_list: renderTaskList,
+    knowledge_list: renderKnowledgeList,
+    knowledge_detail: renderKnowledgeDetail,
     email_list: renderEmailList,
     email_detail: renderEmailDetail,
     calendar_agenda: renderAgenda,

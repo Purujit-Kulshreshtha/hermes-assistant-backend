@@ -15,6 +15,14 @@ from app.board import (
 )
 from pydantic import TypeAdapter
 from app.task_cache import TaskCache
+from app.knowledge import (
+    KnowledgeWrite,
+    archive_knowledge,
+    create_knowledge,
+    get_knowledge,
+    search_knowledge,
+    update_knowledge,
+)
 
 
 mcp = FastMCP("Nancy Visual Board")
@@ -124,6 +132,63 @@ def invalidate_task_cache() -> dict[str, Any]:
 def task_cache_status() -> dict[str, Any]:
     """Report task-cache counts, freshness, age and revisions without returning tasks."""
     return cached_tasks().status()
+
+
+@mcp.tool()
+def save_knowledge(
+    title: str,
+    content: str,
+    kind: Literal["note", "idea", "bookmark", "meeting", "voice_note"] = "note",
+    source_url: str | None = None,
+    tags: list[str] | None = None,
+    related_task_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Permanently save something the user explicitly asked Nancy to remember."""
+    value = KnowledgeWrite(
+        title=title, content=content, kind=kind, source_url=source_url,
+        tags=tags or [], related_task_ids=related_task_ids or [],
+    )
+    return create_knowledge(database_path(), value).model_dump(mode="json")
+
+
+@mcp.tool()
+def search_knowledge_base(
+    query: str = "",
+    kind: Literal["note", "idea", "bookmark", "meeting", "voice_note"] | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Search Nancy's private local knowledge base or return recent entries."""
+    return search_knowledge(database_path(), query, kind, limit).model_dump(mode="json")
+
+
+@mcp.tool()
+def get_knowledge_entry(entry_id: str) -> dict[str, Any]:
+    """Retrieve one complete knowledge entry by its ID."""
+    return get_knowledge(database_path(), entry_id).model_dump(mode="json")
+
+
+@mcp.tool()
+def update_knowledge_entry(
+    entry_id: str,
+    title: str,
+    content: str,
+    kind: Literal["note", "idea", "bookmark", "meeting", "voice_note"] = "note",
+    source_url: str | None = None,
+    tags: list[str] | None = None,
+    related_task_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Replace a knowledge entry after the user asks to correct or extend it."""
+    value = KnowledgeWrite(
+        title=title, content=content, kind=kind, source_url=source_url,
+        tags=tags or [], related_task_ids=related_task_ids or [],
+    )
+    return update_knowledge(database_path(), entry_id, value).model_dump(mode="json")
+
+
+@mcp.tool()
+def archive_knowledge_entry(entry_id: str) -> dict[str, Any]:
+    """Archive a knowledge entry the user explicitly asks Nancy to forget."""
+    return archive_knowledge(database_path(), entry_id).model_dump(mode="json")
 
 
 if __name__ == "__main__":

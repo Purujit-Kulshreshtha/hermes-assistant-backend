@@ -29,6 +29,18 @@ from app.board import (
     save_board,
 )
 from app.task_cache import initialize_task_cache
+from app.knowledge import (
+    KnowledgeEntry,
+    KnowledgeKind,
+    KnowledgeResults,
+    KnowledgeWrite,
+    archive_knowledge,
+    create_knowledge,
+    get_knowledge,
+    initialize_knowledge,
+    search_knowledge,
+    update_knowledge,
+)
 
 
 DEFAULT_CONVERSATION = "voice-main"
@@ -334,6 +346,7 @@ def initialize_history(path: Path) -> None:
         )
     initialize_board_storage(path)
     initialize_task_cache(path)
+    initialize_knowledge(path)
 
 
 def save_interaction(
@@ -1057,6 +1070,74 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
         return load_notifications(
             request.app.state.settings.history_db_path, after, limit
         )
+
+    @app.post(
+        "/knowledge",
+        response_model=KnowledgeEntry,
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[Depends(authenticate)],
+    )
+    async def add_knowledge(value: KnowledgeWrite, request: Request) -> KnowledgeEntry:
+        try:
+            return create_knowledge(request.app.state.settings.history_db_path, value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get(
+        "/knowledge",
+        response_model=KnowledgeResults,
+        dependencies=[Depends(authenticate)],
+    )
+    async def find_knowledge(
+        request: Request,
+        q: str = "",
+        kind: KnowledgeKind | None = None,
+        limit: int = 20,
+    ) -> KnowledgeResults:
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+        return search_knowledge(
+            request.app.state.settings.history_db_path, q, kind, limit
+        )
+
+    @app.get(
+        "/knowledge/{entry_id}",
+        response_model=KnowledgeEntry,
+        dependencies=[Depends(authenticate)],
+    )
+    async def read_knowledge(entry_id: str, request: Request) -> KnowledgeEntry:
+        try:
+            return get_knowledge(request.app.state.settings.history_db_path, entry_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.put(
+        "/knowledge/{entry_id}",
+        response_model=KnowledgeEntry,
+        dependencies=[Depends(authenticate)],
+    )
+    async def replace_knowledge(
+        entry_id: str, value: KnowledgeWrite, request: Request,
+    ) -> KnowledgeEntry:
+        try:
+            return update_knowledge(
+                request.app.state.settings.history_db_path, entry_id, value
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.delete(
+        "/knowledge/{entry_id}",
+        response_model=KnowledgeEntry,
+        dependencies=[Depends(authenticate)],
+    )
+    async def remove_knowledge(entry_id: str, request: Request) -> KnowledgeEntry:
+        try:
+            return archive_knowledge(request.app.state.settings.history_db_path, entry_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get(
         "/board",

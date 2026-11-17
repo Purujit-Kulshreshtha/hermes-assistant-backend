@@ -47,6 +47,18 @@ Layouts: `grid`, `columns`, `spotlight`.
 {"id":"tasks","type":"task_list","data":{"title":"Today","tasks":[{"title":"Review proposal","project":"Personal","due":"11:00","status":"Todo"}]}}
 ```
 
+### knowledge_list
+
+```json
+{"id":"notes","type":"knowledge_list","data":{"title":"Saved ideas","items":[{"title":"Kitchen layout","excerpt":"Keep the sink on the east wall","kind":"idea","tags":["home"],"updated":"Today"}]}}
+```
+
+### knowledge_detail
+
+```json
+{"id":"note","type":"knowledge_detail","data":{"title":"Kitchen dimensions","content":"The study wall is 3.2 metres wide.","kind":"note","tags":["home"],"source_url":null,"updated":"Today"}}
+```
+
 ### email_list
 
 ```json
