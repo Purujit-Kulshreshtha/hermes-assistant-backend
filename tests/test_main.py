@@ -8,7 +8,12 @@ import pytest
 from httpx import ASGITransport, AsyncClient, MockTransport, Response
 
 import app.main as main_module
-from app.main import create_app, extract_final_text
+from app.main import (
+    acknowledgement_for,
+    concise_action_result,
+    create_app,
+    extract_final_text,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +37,15 @@ def test_extract_final_text_ignores_tool_calls() -> None:
         ]
     }
     assert extract_final_text(payload) == "Done."
+
+
+def test_two_phase_messages_distinguish_actions_and_queries() -> None:
+    assert acknowledgement_for("Create a task to buy milk") == "I'll set that up."
+    assert acknowledgement_for("Move the task to Done") == "I'll update that."
+    assert acknowledgement_for("What is on my list?") == "I'll check that."
+    assert concise_action_result("Create a task", "The task was created") == "Done."
+    assert concise_action_result("Show my tasks", "You have three tasks") == "You have three tasks"
+    assert concise_action_result("Delete the task", "I couldn't find it") == "I couldn't find it"
 
 
 @pytest.mark.asyncio
@@ -392,6 +406,7 @@ async def test_async_command_and_settings() -> None:
             loaded = await client.get("/settings", headers=headers)
 
     assert accepted.status_code == 202
+    assert accepted.json()["acknowledgement"] == "I'll check that."
     assert job.json()["status"] == "completed"
     assert job.json()["response"] == "Done."
     assert saved.status_code == 200

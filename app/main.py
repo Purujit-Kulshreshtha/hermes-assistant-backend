@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import time
 import uuid
+import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -98,6 +99,7 @@ class HealthResponse(BaseModel):
 class JobAccepted(BaseModel):
     id: str
     status: str = "queued"
+    acknowledgement: str
 
 
 class JobResponse(BaseModel):
@@ -206,6 +208,42 @@ def extract_final_text(payload: dict[str, Any]) -> str:
 def hermes_conversation_id(conversation: str, generation: str) -> str:
     """Version the upstream runtime session without changing Nancy's UI history."""
     return f"{conversation}::runtime-{generation}"
+
+
+ACTION_WORDS = re.compile(
+    r"\b(add|archive|assign|cancel|change|complete|create|delete|edit|email|"
+    r"mark|move|postpone|remove|rename|remind|reschedule|schedule|send|set|"
+    r"share|update)\b",
+    re.IGNORECASE,
+)
+
+
+def is_action_request(text: str) -> bool:
+    return bool(ACTION_WORDS.search(text))
+
+
+def acknowledgement_for(text: str) -> str:
+    lowered = text.casefold()
+    if not is_action_request(text):
+        return "I'll check that."
+    if any(word in lowered for word in ("create", "add", "schedule", "remind", "set")):
+        return "I'll set that up."
+    if any(word in lowered for word in ("delete", "remove", "archive", "cancel")):
+        return "I'll take care of that."
+    return "I'll update that."
+
+
+def concise_action_result(request: str, answer: str) -> str:
+    if not is_action_request(request):
+        return answer
+    failure_markers = (
+        "can't", "cannot", "couldn't", "could not", "failed", "failure",
+        "unable", "not allowed", "not permitted", "need more", "blocked",
+        "error", "nothing was", "wasn't able", "was not able",
+    )
+    if any(marker in answer.casefold() for marker in failure_markers):
+        return answer
+    return "Done."
 
 
 def initialize_history(path: Path) -> None:
@@ -571,7 +609,7 @@ def create_job(path: Path, body: CommandRequest) -> JobAccepted:
             """,
             (job_id, body.conversation or DEFAULT_CONVERSATION, body.text, now, now),
         )
-    return JobAccepted(id=job_id)
+    return JobAccepted(id=job_id, acknowledgement=acknowledgement_for(body.text))
 
 
 def load_job(path: Path, job_id: str) -> JobResponse | None:
@@ -619,7 +657,7 @@ async def process_job(app: FastAPI, job_id: str) -> None:
         payload = response.json()
         if payload.get("status") != "completed":
             raise ValueError(f"Unexpected Hermes status: {payload.get('status')}")
-        answer = extract_final_text(payload)
+        answer = concise_action_result(job.text, extract_final_text(payload))
         now = datetime.now(UTC).isoformat()
         save_interaction(
             settings.history_db_path, job.conversation, job.text, answer,
