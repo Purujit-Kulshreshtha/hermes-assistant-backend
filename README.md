@@ -57,6 +57,8 @@ pytest -q
 - `HERMES_API_KEY`: `API_SERVER_KEY` from the Hermes `voice` profile.
 - `HERMES_URL`: defaults to the profile-prefixed local endpoint.
 - `HERMES_MODEL`: defaults to `voice`.
+- `HERMES_SESSION_GENERATION`: versions the upstream Hermes session independently
+  from Nancy's visible chat history. Increment it after tool-catalog changes.
 - `REQUEST_TIMEOUT_SECONDS`: defaults to `120`.
 - `HISTORY_DB_PATH`: persistent SQLite database location.
 - `TASK_CACHE_TTL_SECONDS`: freshness window for cached active/today task

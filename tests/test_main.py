@@ -139,6 +139,7 @@ async def test_command_forwards_to_hermes() -> None:
     async def hermes_handler(request: httpx.Request) -> Response:
         assert request.headers["Authorization"] == "Bearer hermes-test-key"
         assert b'"input":"List my boards"' in request.content
+        assert json.loads(request.content)["conversation"] == "voice-main::runtime-1"
         return Response(
             200,
             json={

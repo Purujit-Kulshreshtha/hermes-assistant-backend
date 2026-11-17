@@ -42,6 +42,9 @@ class Settings:
             "http://127.0.0.1:8642/p/voice/v1/responses",
         )
         self.hermes_model = os.environ.get("HERMES_MODEL", "voice")
+        self.hermes_session_generation = os.environ.get(
+            "HERMES_SESSION_GENERATION", "1"
+        ).strip()
         self.opentodo_webhook_secret = os.environ.get("OPENTODO_WEBHOOK_SECRET", "")
         self.hex_bin = os.environ.get("HEX_BIN", "hex")
         self.ffmpeg_bin = os.environ.get("FFMPEG_BIN", "ffmpeg")
@@ -60,6 +63,8 @@ class Settings:
             raise RuntimeError("CONTROL_API_KEY is required")
         if not self.hermes_api_key:
             raise RuntimeError("HERMES_API_KEY is required")
+        if not self.hermes_session_generation or len(self.hermes_session_generation) > 40:
+            raise RuntimeError("HERMES_SESSION_GENERATION must be 1-40 characters")
 
 
 class CommandRequest(BaseModel):
@@ -196,6 +201,11 @@ def extract_final_text(payload: dict[str, Any]) -> str:
     if not parts:
         raise ValueError("Hermes returned no assistant text")
     return "\n".join(parts)
+
+
+def hermes_conversation_id(conversation: str, generation: str) -> str:
+    """Version the upstream runtime session without changing Nancy's UI history."""
+    return f"{conversation}::runtime-{generation}"
 
 
 def initialize_history(path: Path) -> None:
@@ -600,7 +610,9 @@ async def process_job(app: FastAPI, job_id: str) -> None:
             json={
                 "model": settings.hermes_model,
                 "input": job.text,
-                "conversation": job.conversation,
+                "conversation": hermes_conversation_id(
+                    job.conversation, settings.hermes_session_generation
+                ),
             },
         )
         response.raise_for_status()
@@ -683,7 +695,9 @@ def create_app(transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
             "input": body.text,
         }
         if body.conversation:
-            hermes_body["conversation"] = body.conversation
+            hermes_body["conversation"] = hermes_conversation_id(
+                body.conversation, settings.hermes_session_generation
+            )
 
         try:
             response = await request.app.state.hermes_client.post(
