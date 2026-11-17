@@ -26,8 +26,13 @@ change source data from the board.
 ## Composition rules
 
 - Prefer two to six components. Do not fill the board merely because components exist.
+- For task boards with a requested summary, put `metric_cards` first so the key
+  counts appear above details; place the heading after the metrics if needed for context.
+- Group tasks into separate `task_list` components by meaningful status (for
+  example overdue and due today), rather than mixing statuses in one list.
 - Start with `heading` when the board needs context.
-- Use `metric_cards` only for genuinely useful summary numbers.
+- Use `metric_cards` only for genuinely useful summary numbers; derive each total
+  from the retrieved task set and distinguish overdue from due-today counts.
 - Use domain components (`task_list`, `email_list`, `calendar_agenda`) instead of a generic table.
 - Use `knowledge_list` and `knowledge_detail` for saved notes, ideas, bookmarks and meetings.
 - Use `callout` for the single most important caveat or insight.
