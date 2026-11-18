@@ -5,6 +5,8 @@
       this.source = null;
       this.controller = null;
       this.generation = 0;
+      this.queue = [];
+      this.draining = false;
     }
 
     setStatus(status, detail = '') {
@@ -42,9 +44,31 @@
       });
     }
 
-    async speak(text, {voice = 'af_heart', speed = 1} = {}) {
-      if (!text?.trim()) return;
-      this.stop();
+    speak(text, {voice = 'af_heart', speed = 1, before = null} = {}) {
+      if (!text?.trim()) return Promise.resolve(false);
+      return new Promise(resolve => {
+        this.queue.push({text, voice, speed, before, resolve});
+        this.drain();
+      });
+    }
+
+    async drain() {
+      if (this.draining) return;
+      this.draining = true;
+      try {
+        while (this.queue.length) {
+          const item = this.queue.shift();
+          if (item.before) item.before();
+          await this.speakOne(item.text, item.voice, item.speed);
+          item.resolve(true);
+        }
+      } finally {
+        this.draining = false;
+        if (!this.controller && !this.source) this.setStatus('ready');
+      }
+    }
+
+    async speakOne(text, voice, speed) {
       const generation = this.generation;
       const controller = new AbortController();
       this.controller = controller;
@@ -90,7 +114,6 @@
             await this.play(frame, generation);
           }
         }
-        if (generation === this.generation) this.setStatus('ready');
       } catch (error) {
         if (error.name === 'AbortError' || generation !== this.generation) return;
         console.warn('Oracle speech failed; using system speech', error);
@@ -98,7 +121,11 @@
         if ('speechSynthesis' in window) {
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.rate = speed;
-          speechSynthesis.speak(utterance);
+          await new Promise(resolve => {
+            utterance.onend = resolve;
+            utterance.onerror = resolve;
+            speechSynthesis.speak(utterance);
+          });
         }
       } finally {
         if (this.controller === controller) this.controller = null;
@@ -107,6 +134,7 @@
 
     stop() {
       this.generation += 1;
+      for (const item of this.queue.splice(0)) item.resolve(false);
       this.controller?.abort();
       this.controller = null;
       if (this.source) {

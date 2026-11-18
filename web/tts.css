@@ -28,3 +28,8 @@
 }
 
 .stop-speech[hidden] { display: none; }
+
+@media (max-width: 560px) {
+  .stop-speech { font-size: 0; padding: 8px 11px; }
+  .stop-speech::after { content: "■"; font-size: .85rem; }
+}

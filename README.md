@@ -144,7 +144,9 @@ Kokoro runs on Oracle and generates replies one sentence at a time.
 playback while later sentences are still being synthesized. Generated sentences
 are cached under `TTS_CACHE_DIR` (beside the history database by default). The
 header **Stop** control aborts the HTTP stream and immediately stops playback;
-starting a voice note does the same. If server speech is unavailable, the PWA
+it also clears queued speech. Reminders wait behind any active response, and
+their notification sound plays only when the reminder reaches the front of the
+queue. Starting a voice note stops and clears speech too. If server speech is unavailable, the PWA
 falls back to the device's system voice.
 
 The first synthesis downloads Kokoro's model. Install `espeak-ng` and the Python
